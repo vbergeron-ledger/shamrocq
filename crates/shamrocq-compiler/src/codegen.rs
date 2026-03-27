@@ -301,7 +301,7 @@ impl Compiler {
 
     fn emit_deferred(&mut self) {
         while !self.deferred.is_empty() {
-            let batch: Vec<_> = self.deferred.drain(..).collect();
+            let batch = core::mem::take(&mut self.deferred);
             for dl in batch {
                 let body_addr = self.emitter.pos() as u16;
                 self.emitter.patch_u16(dl.closure_code_addr_pos, body_addr);

@@ -48,6 +48,17 @@ impl<'a> Arena<'a> {
         Ok(Value::tuple(tag, offset))
     }
 
+    /// Allocate a tuple by popping `arity` values from the arena stack.
+    /// Fields are expected on the stack in order (first field deepest, last on top).
+    pub fn alloc_tuple_from_stack(&mut self, tag: u8, arity: usize) -> Result<Value, ArenaError> {
+        let offset = self.alloc(arity)?;
+        for i in (0..arity).rev() {
+            let field = self.stack_pop();
+            self.write_word(offset + i * 4, field.raw());
+        }
+        Ok(Value::tuple(tag, offset))
+    }
+
     pub fn alloc_closure(
         &mut self,
         code_addr: u16,
@@ -58,6 +69,22 @@ impl<'a> Arena<'a> {
         self.write_word(offset, ((code_addr as u32) << 16) | (n as u32));
         for (i, &c) in captures.iter().enumerate() {
             self.write_word(offset + (1 + i) * 4, c.raw());
+        }
+        Ok(Value::closure(offset))
+    }
+
+    /// Allocate a closure by popping `n_cap` capture values from the arena stack.
+    /// Captures are expected on the stack in order (first capture deepest, last on top).
+    pub fn alloc_closure_from_stack(
+        &mut self,
+        code_addr: u16,
+        n_cap: usize,
+    ) -> Result<Value, ArenaError> {
+        let offset = self.alloc(1 + n_cap)?;
+        self.write_word(offset, ((code_addr as u32) << 16) | (n_cap as u32));
+        for i in (0..n_cap).rev() {
+            let cap = self.stack_pop();
+            self.write_word(offset + (1 + i) * 4, cap.raw());
         }
         Ok(Value::closure(offset))
     }

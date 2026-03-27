@@ -121,6 +121,7 @@ pub struct Vm<'buf> {
     globals: [Value; 64],
     n_globals: u16,
     code: &'buf [u8],
+    call_stack: [CallFrame; MAX_CALL_DEPTH],
     #[cfg(feature = "stats")]
     pub stats: Stats,
 }
@@ -134,6 +135,7 @@ impl<'buf> Vm<'buf> {
             globals: [Value::immediate(0); 64],
             n_globals: 0,
             code: &[],
+            call_stack: core::array::from_fn(|_| CallFrame::fresh()),
             #[cfg(feature = "stats")]
             stats: Stats::default(),
         }
@@ -214,7 +216,6 @@ impl<'buf> Vm<'buf> {
     fn eval_with_frame(&mut self, start_pc: usize, frame_base: usize) -> Result<Value, VmError> {
         let code = self.code;
         let mut pc = start_pc;
-        let mut call_stack: [CallFrame; MAX_CALL_DEPTH] = core::array::from_fn(|_| CallFrame::fresh());
         let mut call_depth: usize = 0;
         let mut frame_base = frame_base;
 
@@ -240,11 +241,7 @@ impl<'buf> Vm<'buf> {
                     let tag = code[pc];
                     let arity = code[pc + 1] as usize;
                     pc += 2;
-                    let mut fields = [Value::immediate(0); 8];
-                    for i in (0..arity).rev() {
-                        fields[i] = self.arena.stack_pop();
-                    }
-                    let val = self.arena.alloc_tuple(tag, &fields[..arity])?;
+                    let val = self.arena.alloc_tuple_from_stack(tag, arity)?;
                     stat!(self, alloc_count_tuple += 1);
                     stat!(self, alloc_bytes_total += (arity * 4) as u32);
                     self.record_heap();
@@ -272,11 +269,7 @@ impl<'buf> Vm<'buf> {
                     let code_addr = u16::from_le_bytes([code[pc], code[pc + 1]]);
                     let n_cap = code[pc + 2] as usize;
                     pc += 3;
-                    let mut caps = [Value::immediate(0); 16];
-                    for i in (0..n_cap).rev() {
-                        caps[i] = self.arena.stack_pop();
-                    }
-                    let val = self.arena.alloc_closure(code_addr, &caps[..n_cap])?;
+                    let val = self.arena.alloc_closure_from_stack(code_addr, n_cap)?;
                     stat!(self, alloc_count_closure += 1);
                     stat!(self, alloc_bytes_total += ((1 + n_cap) * 4) as u32);
                     self.record_heap();
@@ -293,7 +286,7 @@ impl<'buf> Vm<'buf> {
                     if call_depth >= MAX_CALL_DEPTH {
                         return Err(VmError::StackOverflow);
                     }
-                    call_stack[call_depth] = CallFrame {
+                    self.call_stack[call_depth] = CallFrame {
                         return_pc: pc,
                         frame_base,
                     };
@@ -341,8 +334,8 @@ impl<'buf> Vm<'buf> {
                         return Ok(result);
                     }
                     call_depth -= 1;
-                    pc = call_stack[call_depth].return_pc;
-                    frame_base = call_stack[call_depth].frame_base;
+                    pc = self.call_stack[call_depth].return_pc;
+                    frame_base = self.call_stack[call_depth].frame_base;
                 }
 
                 op::MATCH => {
