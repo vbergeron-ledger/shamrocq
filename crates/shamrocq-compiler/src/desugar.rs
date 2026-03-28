@@ -22,6 +22,8 @@ pub enum Expr {
     Letrec(String, Box<Expr>, Box<Expr>),
     Match(Box<Expr>, Vec<MatchCase>),
     Error,
+    /// A host-provided foreign function, identified by its registration index.
+    Foreign(u16),
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +44,7 @@ pub struct Define {
 /// Skips `load` forms.
 pub fn desugar_program(sexps: &[Sexp]) -> Result<Vec<Define>, String> {
     let mut defs = Vec::new();
+    let mut n_foreign: u16 = 0;
     for sexp in sexps {
         match sexp {
             Sexp::List(items) => {
@@ -51,6 +54,18 @@ pub fn desugar_program(sexps: &[Sexp]) -> Result<Vec<Define>, String> {
                         "define" => {
                             let def = desugar_define(items)?;
                             defs.push(def);
+                        }
+                        "define-foreign" => {
+                            if items.len() != 2 {
+                                return Err("define-foreign expects exactly one name".to_string());
+                            }
+                            let name = items[1]
+                                .as_atom()
+                                .ok_or("define-foreign name must be an atom")?
+                                .to_string();
+                            let idx = n_foreign;
+                            n_foreign += 1;
+                            defs.push(Define { name, body: Expr::Foreign(idx) });
                         }
                         _ => return Err(format!("unexpected top-level form: {}", head)),
                     }

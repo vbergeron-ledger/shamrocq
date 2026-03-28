@@ -1,6 +1,7 @@
 const KIND_CTOR: u32 = 0b000 << 29;
 const KIND_INTEGER: u32 = 0b001 << 29;
 const KIND_BYTES: u32 = 0b010 << 29;
+const KIND_FOREIGN_FN: u32 = 0b011 << 29;
 const KIND_CLOSURE: u32 = 0b110 << 29;
 const KIND_BARE_FN: u32 = 0b111 << 29;
 
@@ -85,8 +86,20 @@ impl Value {
         self.0 & KIND_MASK == KIND_BYTES
     }
 
+    pub const fn foreign_fn(idx: u16) -> Self {
+        Value(KIND_FOREIGN_FN | (idx as u32))
+    }
+
+    pub const fn is_foreign_fn(self) -> bool {
+        self.0 & KIND_MASK == KIND_FOREIGN_FN
+    }
+
+    pub const fn foreign_fn_idx(self) -> u16 {
+        self.0 as u16
+    }
+
     pub const fn is_callable(self) -> bool {
-        self.0 & CALLABLE_MASK == CALLABLE_BITS
+        self.0 & CALLABLE_MASK == CALLABLE_BITS || self.is_foreign_fn()
     }
 
     pub const fn raw(self) -> u32 {
@@ -106,6 +119,8 @@ impl core::fmt::Debug for Value {
             write!(f, "Int({})", self.integer_value())
         } else if self.is_bytes() {
             write!(f, "Bytes(len={}, @{})", self.bytes_len(), self.bytes_offset())
+        } else if self.is_foreign_fn() {
+            write!(f, "ForeignFn({})", self.foreign_fn_idx())
         } else if self.is_bare_fn() {
             write!(f, "Fn(pc={})", self.code_addr())
         } else {

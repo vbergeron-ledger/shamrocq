@@ -5,6 +5,10 @@ use crate::resolve::{RDefine, RExpr, RMatchCase};
 pub struct CompiledProgram {
     pub header: ProgramHeader,
     pub code: Vec<u8>,
+    /// Foreign function declarations: (name, registration index).
+    /// The host must call `vm.register_foreign(idx, fn)` for each entry
+    /// before loading the program.
+    pub foreign_fns: Vec<(String, u16)>,
 }
 
 impl CompiledProgram {
@@ -153,12 +157,24 @@ pub fn compile_program(defs: &[RDefine]) -> CompiledProgram {
         c.emitter.patch_u16(patch_pos, addr);
     }
 
+    let foreign_fns: Vec<(String, u16)> = defs
+        .iter()
+        .filter_map(|d| {
+            if let RExpr::Foreign(idx) = d.body {
+                Some((d.name.clone(), idx))
+            } else {
+                None
+            }
+        })
+        .collect();
+
     CompiledProgram {
         header: ProgramHeader {
             n_globals: global_offsets.len() as u16,
             globals: global_offsets,
         },
         code: c.emitter.code,
+        foreign_fns,
     }
 }
 
@@ -347,6 +363,13 @@ impl Compiler {
             RExpr::Error => {
                 self.emitter.emit_error();
             }
+
+            RExpr::Foreign(idx) => {
+                self.emitter.emit_foreign_fn_const(*idx);
+                if tail {
+                    self.emitter.emit_ret();
+                }
+            }
         }
     }
 
@@ -445,7 +468,7 @@ fn collect_free(expr: &RExpr, bound: usize, free: &mut Vec<u8>) {
                 free.push((idx - bound) as u8);
             }
         }
-        RExpr::Global(_) | RExpr::Int(_) | RExpr::Bytes(_) | RExpr::Error => {}
+        RExpr::Global(_) | RExpr::Int(_) | RExpr::Bytes(_) | RExpr::Error | RExpr::Foreign(_) => {}
         RExpr::Ctor(_, fields) => {
             for f in fields {
                 collect_free(f, bound, free);

@@ -36,6 +36,7 @@ mod op {
     pub const BYTES_CONCAT: u8 = 0x1C;
     pub const CALL_DIRECT: u8 = 0x1D;
     pub const TAIL_CALL_DIRECT: u8 = 0x1E;
+    pub const FOREIGN_FN_CONST: u8 = 0x1F;
 }
 
 #[derive(Debug)]
@@ -54,6 +55,11 @@ impl From<ArenaError> for VmError {
         VmError::Oom
     }
 }
+
+/// A host function callable from Scheme. Takes a single (curried) argument.
+pub type ForeignFn = fn(&mut Vm<'_>, Value) -> Result<Value, VmError>;
+
+const MAX_FOREIGN_FNS: usize = 32;
 
 pub struct Program<'a> {
     pub n_globals: u16,
@@ -139,6 +145,7 @@ pub struct Vm<'buf> {
     n_globals: u16,
     code: &'buf [u8],
     call_stack: [CallFrame; MAX_CALL_DEPTH],
+    foreign_fns: [Option<ForeignFn>; MAX_FOREIGN_FNS],
     #[cfg(feature = "stats")]
     pub stats: Stats,
 }
@@ -153,9 +160,19 @@ impl<'buf> Vm<'buf> {
             n_globals: 0,
             code: &[],
             call_stack: core::array::from_fn(|_| CallFrame::fresh()),
+            foreign_fns: [None; MAX_FOREIGN_FNS],
             #[cfg(feature = "stats")]
             stats: Stats::default(),
         }
+    }
+
+    /// Register a host function at the given index.
+    ///
+    /// The index must match the one assigned by the compiler for `define-foreign`
+    /// declarations (see the generated `foreign_fns.rs`). Call this before
+    /// `load_program` so the global slot resolves to the correct callable value.
+    pub fn register_foreign(&mut self, idx: u16, f: ForeignFn) {
+        self.foreign_fns[idx as usize] = Some(f);
     }
 
     pub fn reset(&mut self) {
@@ -194,18 +211,24 @@ impl<'buf> Vm<'buf> {
             if !func.is_callable() {
                 return Err(VmError::NotAClosure);
             }
-            let saved_depth = self.arena.stack_depth();
-            let code_addr = if func.is_bare_fn() {
-                func.code_addr()
+            if func.is_foreign_fn() {
+                let f = self.foreign_fns[func.foreign_fn_idx() as usize]
+                    .ok_or(VmError::InvalidBytecode)?;
+                func = f(self, arg)?;
             } else {
-                let n_cap = self.arena.closure_capture_count(func);
-                for i in 0..n_cap {
-                    self.arena.stack_push(self.arena.closure_capture(func, i))?;
-                }
-                self.arena.closure_code(func)
-            };
-            self.arena.stack_push(arg)?;
-            func = self.eval_with_frame(code_addr as usize, saved_depth)?;
+                let saved_depth = self.arena.stack_depth();
+                let code_addr = if func.is_bare_fn() {
+                    func.code_addr()
+                } else {
+                    let n_cap = self.arena.closure_capture_count(func);
+                    for i in 0..n_cap {
+                        self.arena.stack_push(self.arena.closure_capture(func, i))?;
+                    }
+                    self.arena.closure_code(func)
+                };
+                self.arena.stack_push(arg)?;
+                func = self.eval_with_frame(code_addr as usize, saved_depth)?;
+            }
         }
         Ok(func)
     }
@@ -305,30 +328,37 @@ impl<'buf> Vm<'buf> {
                     if !func.is_callable() {
                         return Err(VmError::NotAClosure);
                     }
-                    if call_depth >= MAX_CALL_DEPTH {
-                        return Err(VmError::StackOverflow);
-                    }
-                    self.call_stack[call_depth] = CallFrame {
-                        return_pc: pc,
-                        frame_base,
-                    };
-                    call_depth += 1;
-                    stat!(self, exec_call_count += 1);
-                    stat!(self, exec_peak_call_depth = max call_depth as u32);
-
-                    frame_base = self.arena.stack_depth();
-                    let ca = if func.is_bare_fn() {
-                        func.code_addr()
+                    if func.is_foreign_fn() {
+                        let f = self.foreign_fns[func.foreign_fn_idx() as usize]
+                            .ok_or(VmError::InvalidBytecode)?;
+                        let result = f(self, arg)?;
+                        self.arena.stack_push(result)?;
                     } else {
-                        let n_cap = self.arena.closure_capture_count(func);
-                        for i in 0..n_cap {
-                            self.arena.stack_push(self.arena.closure_capture(func, i))?;
+                        if call_depth >= MAX_CALL_DEPTH {
+                            return Err(VmError::StackOverflow);
                         }
-                        self.arena.closure_code(func)
-                    };
-                    self.arena.stack_push(arg)?;
-                    self.record_stack();
-                    pc = ca as usize;
+                        self.call_stack[call_depth] = CallFrame {
+                            return_pc: pc,
+                            frame_base,
+                        };
+                        call_depth += 1;
+                        stat!(self, exec_call_count += 1);
+                        stat!(self, exec_peak_call_depth = max call_depth as u32);
+
+                        frame_base = self.arena.stack_depth();
+                        let ca = if func.is_bare_fn() {
+                            func.code_addr()
+                        } else {
+                            let n_cap = self.arena.closure_capture_count(func);
+                            for i in 0..n_cap {
+                                self.arena.stack_push(self.arena.closure_capture(func, i))?;
+                            }
+                            self.arena.closure_code(func)
+                        };
+                        self.arena.stack_push(arg)?;
+                        self.record_stack();
+                        pc = ca as usize;
+                    }
                 }
 
                 op::TAIL_CALL => {
@@ -337,22 +367,37 @@ impl<'buf> Vm<'buf> {
                     if !func.is_callable() {
                         return Err(VmError::NotAClosure);
                     }
-                    self.arena.stack_truncate(frame_base);
-                    stat!(self, exec_tail_call_count += 1);
-
-                    frame_base = self.arena.stack_depth();
-                    let ca = if func.is_bare_fn() {
-                        func.code_addr()
-                    } else {
-                        let n_cap = self.arena.closure_capture_count(func);
-                        for i in 0..n_cap {
-                            self.arena.stack_push(self.arena.closure_capture(func, i))?;
+                    if func.is_foreign_fn() {
+                        let f = self.foreign_fns[func.foreign_fn_idx() as usize]
+                            .ok_or(VmError::InvalidBytecode)?;
+                        let result = f(self, arg)?;
+                        // Simulate RET: truncate to our frame base, push result, pop call frame.
+                        self.arena.stack_truncate(frame_base);
+                        self.arena.stack_push(result)?;
+                        if call_depth == 0 {
+                            return Ok(result);
                         }
-                        self.arena.closure_code(func)
-                    };
-                    self.arena.stack_push(arg)?;
-                    self.record_stack();
-                    pc = ca as usize;
+                        call_depth -= 1;
+                        pc = self.call_stack[call_depth].return_pc;
+                        frame_base = self.call_stack[call_depth].frame_base;
+                    } else {
+                        self.arena.stack_truncate(frame_base);
+                        stat!(self, exec_tail_call_count += 1);
+
+                        frame_base = self.arena.stack_depth();
+                        let ca = if func.is_bare_fn() {
+                            func.code_addr()
+                        } else {
+                            let n_cap = self.arena.closure_capture_count(func);
+                            for i in 0..n_cap {
+                                self.arena.stack_push(self.arena.closure_capture(func, i))?;
+                            }
+                            self.arena.closure_code(func)
+                        };
+                        self.arena.stack_push(arg)?;
+                        self.record_stack();
+                        pc = ca as usize;
+                    }
                 }
 
                 op::RET => {
@@ -583,6 +628,12 @@ impl<'buf> Vm<'buf> {
                     self.record_stack();
                     frame_base = self.arena.stack_depth() - n_args;
                     pc = code_addr as usize;
+                }
+
+                op::FOREIGN_FN_CONST => {
+                    let idx = u16::from_le_bytes([code[pc], code[pc + 1]]);
+                    pc += 2;
+                    self.arena.stack_push(Value::foreign_fn(idx))?;
                 }
 
                 _ => return Err(VmError::InvalidBytecode),
