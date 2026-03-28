@@ -25,6 +25,7 @@ mod integration {
                 let name = path.file_name()?.to_str()?;
                 if path.extension().and_then(|e| e.to_str()) == Some("scm")
                     && name != "macros_extr.scm"
+                    && name != "synth_int.scm"
                 {
                     Some(path)
                 } else {

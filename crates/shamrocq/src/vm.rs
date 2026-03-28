@@ -21,6 +21,14 @@ mod op {
     pub const ERROR: u8 = 0x0D;
     pub const SLIDE: u8 = 0x0E;
     pub const FIXPOINT: u8 = 0x0F;
+    pub const INT_CONST: u8 = 0x10;
+    pub const ADD: u8 = 0x11;
+    pub const SUB: u8 = 0x12;
+    pub const MUL: u8 = 0x13;
+    pub const DIV: u8 = 0x14;
+    pub const NEG: u8 = 0x15;
+    pub const EQ: u8 = 0x16;
+    pub const LT: u8 = 0x17;
 }
 
 #[derive(Debug)]
@@ -195,10 +203,6 @@ impl<'buf> Vm<'buf> {
 
     pub fn tuple_field(&self, val: Value, idx: usize) -> Value {
         self.arena.tuple_field(val, idx)
-    }
-
-    pub fn nil(&self) -> Value {
-        Value::immediate(crate::value::tags::NIL)
     }
 
     pub fn alloc_tuple(&mut self, tag: u8, fields: &[Value]) -> Result<Value, VmError> {
@@ -433,6 +437,61 @@ impl<'buf> Vm<'buf> {
                     }
                     self.arena.stack_set(1, closure);
                     self.arena.stack_pop();
+                }
+
+                op::INT_CONST => {
+                    let n = i32::from_le_bytes([
+                        code[pc],
+                        code[pc + 1],
+                        code[pc + 2],
+                        code[pc + 3],
+                    ]);
+                    pc += 4;
+                    self.arena.stack_push(Value::integer(n))?;
+                    self.record_stack();
+                }
+
+                op::ADD => {
+                    let b = self.arena.stack_pop().integer_value();
+                    let a = self.arena.stack_pop().integer_value();
+                    self.arena.stack_push(Value::integer(a.wrapping_add(b)))?;
+                }
+
+                op::SUB => {
+                    let b = self.arena.stack_pop().integer_value();
+                    let a = self.arena.stack_pop().integer_value();
+                    self.arena.stack_push(Value::integer(a.wrapping_sub(b)))?;
+                }
+
+                op::MUL => {
+                    let b = self.arena.stack_pop().integer_value();
+                    let a = self.arena.stack_pop().integer_value();
+                    self.arena.stack_push(Value::integer(a.wrapping_mul(b)))?;
+                }
+
+                op::DIV => {
+                    let b = self.arena.stack_pop().integer_value();
+                    let a = self.arena.stack_pop().integer_value();
+                    self.arena.stack_push(Value::integer(a.wrapping_div(b)))?;
+                }
+
+                op::NEG => {
+                    let a = self.arena.stack_pop().integer_value();
+                    self.arena.stack_push(Value::integer(a.wrapping_neg()))?;
+                }
+
+                op::EQ => {
+                    let b = self.arena.stack_pop().integer_value();
+                    let a = self.arena.stack_pop().integer_value();
+                    let tag = if a == b { crate::value::tags::TRUE } else { crate::value::tags::FALSE };
+                    self.arena.stack_push(Value::immediate(tag))?;
+                }
+
+                op::LT => {
+                    let b = self.arena.stack_pop().integer_value();
+                    let a = self.arena.stack_pop().integer_value();
+                    let tag = if a < b { crate::value::tags::TRUE } else { crate::value::tags::FALSE };
+                    self.arena.stack_push(Value::immediate(tag))?;
                 }
 
                 _ => return Err(VmError::InvalidBytecode),

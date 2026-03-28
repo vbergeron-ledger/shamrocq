@@ -19,6 +19,14 @@ pub mod op {
     pub const ERROR: u8 = 0x0D;
     pub const SLIDE: u8 = 0x0E;
     pub const FIXPOINT: u8 = 0x0F;
+    pub const INT_CONST: u8 = 0x10;
+    pub const ADD: u8 = 0x11;
+    pub const SUB: u8 = 0x12;
+    pub const MUL: u8 = 0x13;
+    pub const DIV: u8 = 0x14;
+    pub const NEG: u8 = 0x15;
+    pub const EQ: u8 = 0x16;
+    pub const LT: u8 = 0x17;
 }
 
 /// Binary encoding helpers used by the compiler to emit bytecode,
@@ -154,6 +162,19 @@ impl Emitter {
         self.code.push(op::FIXPOINT);
         self.code.push(cap_idx);
     }
+
+    pub fn emit_int_const(&mut self, n: i32) {
+        self.code.push(op::INT_CONST);
+        self.code.extend_from_slice(&n.to_le_bytes());
+    }
+
+    pub fn emit_add(&mut self) { self.code.push(op::ADD); }
+    pub fn emit_sub(&mut self) { self.code.push(op::SUB); }
+    pub fn emit_mul(&mut self) { self.code.push(op::MUL); }
+    pub fn emit_div(&mut self) { self.code.push(op::DIV); }
+    pub fn emit_neg(&mut self) { self.code.push(op::NEG); }
+    pub fn emit_eq(&mut self)  { self.code.push(op::EQ); }
+    pub fn emit_lt(&mut self)  { self.code.push(op::LT); }
 }
 
 /// Header prepended to the compiled bytecode blob.

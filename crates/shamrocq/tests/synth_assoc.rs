@@ -3,15 +3,15 @@
 mod common;
 
 use common::{setup, peano, unpeano, list_to_vec, print_stats};
-use shamrocq::{tags, ctors, funcs, Program, Value, Vm};
+use shamrocq::{ctors, funcs, Program, Value, Vm};
 
 fn make_assoc(vm: &mut Vm, pairs: &[(u32, u32)]) -> Value {
-    let mut list = Value::immediate(tags::NIL);
+    let mut list = Value::immediate(ctors::NIL);
     for &(k, v) in pairs.iter().rev() {
         let key = peano(vm, k);
         let val = peano(vm, v);
-        let pair = vm.alloc_tuple(tags::PAIR, &[key, val]).unwrap();
-        list = vm.alloc_tuple(tags::CONS, &[pair, list]).unwrap();
+        let pair = vm.alloc_tuple(ctors::PAIR, &[key, val]).unwrap();
+        list = vm.alloc_tuple(ctors::CONS, &[pair, list]).unwrap();
     }
     list
 }

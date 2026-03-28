@@ -11,3 +11,6 @@ integration = ["dep:shamrocq-compiler"]
 
 [build-dependencies]
 shamrocq-compiler = { path = "../shamrocq-compiler", optional = true }
+
+[dev-dependencies]
+shamrocq-compiler = { path = "../shamrocq-compiler" }

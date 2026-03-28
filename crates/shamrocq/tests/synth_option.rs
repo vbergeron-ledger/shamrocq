@@ -100,7 +100,7 @@ fn option_is_some_and_none() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let some = vm.alloc_tuple(ctors::SOME, &[Value::immediate(tags::O)]).unwrap();
+    let some = vm.alloc_tuple(ctors::SOME, &[Value::immediate(ctors::O)]).unwrap();
     let none = Value::immediate(ctors::NONE_);
 
     let r1 = vm.call(funcs::OPTION_IS_SOME, &[some]).unwrap();

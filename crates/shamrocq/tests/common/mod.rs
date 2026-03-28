@@ -1,7 +1,44 @@
 #![allow(dead_code)]
 
-use shamrocq::{tags, Value, Vm, BYTECODE};
+#[cfg(feature = "integration")]
+use shamrocq::{ctors, BYTECODE};
+use shamrocq::{Value, Vm};
 
+use shamrocq_compiler::codegen::compile_program;
+use shamrocq_compiler::desugar::desugar_program;
+use shamrocq_compiler::parser::parse;
+use shamrocq_compiler::resolve::{resolve_program, GlobalTable, TagTable};
+
+use std::collections::HashMap;
+
+pub struct Compiled {
+    pub blob: Vec<u8>,
+    pub funcs: HashMap<String, u16>,
+}
+
+pub fn compile_scheme(files: &[&str]) -> Compiled {
+    let root = env!("CARGO_MANIFEST_DIR").to_string() + "/../../scheme/";
+    let mut all_sexps = Vec::new();
+    for file in files {
+        let path = format!("{}{}", root, file);
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {}", path, e));
+        let sexps = parse(&src)
+            .unwrap_or_else(|e| panic!("parse error in {}: {}", path, e));
+        all_sexps.extend(sexps);
+    }
+    let defs = desugar_program(&all_sexps).unwrap();
+    let mut tags = TagTable::new();
+    let mut globals = GlobalTable::new();
+    let rdefs = resolve_program(&defs, &mut tags, &mut globals).unwrap();
+    let prog = compile_program(&rdefs);
+    let funcs = prog.header.globals.iter().enumerate()
+        .map(|(i, (name, _))| (name.clone(), i as u16))
+        .collect();
+    Compiled { blob: prog.serialize(), funcs }
+}
+
+#[cfg(feature = "integration")]
 pub fn setup() -> (Vec<u8>, &'static [u8]) {
     let buf = vec![0u8; 65536];
     (buf, BYTECODE)
@@ -43,36 +80,40 @@ pub fn print_stats(name: &str, vm: &Vm) {
 #[cfg(not(feature = "stats"))]
 pub fn print_stats(_name: &str, _vm: &Vm) {}
 
+#[cfg(feature = "integration")]
 pub fn peano(vm: &mut Vm, n: u32) -> Value {
-    let mut v = Value::immediate(tags::O);
+    let mut v = Value::immediate(ctors::O);
     for _ in 0..n {
-        v = vm.alloc_tuple(tags::S, &[v]).unwrap();
+        v = vm.alloc_tuple(ctors::S, &[v]).unwrap();
     }
     v
 }
 
+#[cfg(feature = "integration")]
 pub fn unpeano(vm: &Vm, mut v: Value) -> u32 {
     let mut n = 0;
-    while v.tag() == tags::S {
+    while v.tag() == ctors::S {
         v = vm.tuple_field(v, 0);
         n += 1;
     }
     n
 }
 
+#[cfg(feature = "integration")]
 pub fn list_to_vec(vm: &Vm, mut v: Value) -> Vec<Value> {
     let mut out = Vec::new();
-    while v.tag() == tags::CONS {
+    while v.tag() == ctors::CONS {
         out.push(vm.tuple_field(v, 0));
         v = vm.tuple_field(v, 1);
     }
     out
 }
 
+#[cfg(feature = "integration")]
 pub fn make_list(vm: &mut Vm, items: &[Value]) -> Value {
-    let mut list = Value::immediate(tags::NIL);
+    let mut list = Value::immediate(ctors::NIL);
     for &item in items.iter().rev() {
-        list = vm.alloc_tuple(tags::CONS, &[item, list]).unwrap();
+        list = vm.alloc_tuple(ctors::CONS, &[item, list]).unwrap();
     }
     list
 }

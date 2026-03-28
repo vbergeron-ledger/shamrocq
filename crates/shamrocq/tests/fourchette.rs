@@ -3,7 +3,7 @@
 mod common;
 
 use common::{setup, peano, unpeano, list_to_vec, make_list, print_stats};
-use shamrocq::{tags, funcs, Program, Value, Vm};
+use shamrocq::{tags, ctors, funcs, Program, Value, Vm};
 
 #[test]
 fn load_program() {
@@ -47,9 +47,9 @@ fn length_nil_is_zero() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let nil = Value::immediate(tags::NIL);
+    let nil = Value::immediate(ctors::NIL);
     let result = vm.call(funcs::LENGTH, &[nil]).unwrap();
-    assert_eq!(result.tag(), tags::O);
+    assert_eq!(result.tag(), ctors::O);
     assert!(result.is_immediate());
     print_stats("length(nil)", &vm);
 }
@@ -61,15 +61,15 @@ fn length_singleton() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let nil = Value::immediate(tags::NIL);
-    let elem = Value::immediate(tags::O);
-    let list = vm.alloc_tuple(tags::CONS, &[elem, nil]).unwrap();
+    let nil = Value::immediate(ctors::NIL);
+    let elem = Value::immediate(ctors::O);
+    let list = vm.alloc_tuple(ctors::CONS, &[elem, nil]).unwrap();
 
     let result = vm.call(funcs::LENGTH, &[list]).unwrap();
-    assert_eq!(result.tag(), tags::S);
+    assert_eq!(result.tag(), ctors::S);
     assert!(result.is_tuple());
     let inner = vm.tuple_field(result, 0);
-    assert_eq!(inner.tag(), tags::O);
+    assert_eq!(inner.tag(), ctors::O);
     print_stats("length([_])", &vm);
 }
 
@@ -80,8 +80,8 @@ fn leb_zero_anything_is_true() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let zero = Value::immediate(tags::O);
-    let one = vm.alloc_tuple(tags::S, &[zero]).unwrap();
+    let zero = Value::immediate(ctors::O);
+    let one = vm.alloc_tuple(ctors::S, &[zero]).unwrap();
 
     let result = vm.call(funcs::LEB, &[zero, one]).unwrap();
     assert_eq!(result.tag(), tags::TRUE);
@@ -95,13 +95,13 @@ fn map_negb_over_list() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let nil = Value::immediate(tags::NIL);
+    let nil = Value::immediate(ctors::NIL);
     let t = Value::immediate(tags::TRUE);
     let f = Value::immediate(tags::FALSE);
-    let list = vm.alloc_tuple(tags::CONS, &[t, nil]).unwrap();
-    let list = vm.alloc_tuple(tags::CONS, &[f, list]).unwrap();
+    let list = vm.alloc_tuple(ctors::CONS, &[t, nil]).unwrap();
+    let list = vm.alloc_tuple(ctors::CONS, &[f, list]).unwrap();
 
-    assert_eq!(list.tag(), tags::CONS);
+    assert_eq!(list.tag(), ctors::CONS);
     let head = vm.tuple_field(list, 0);
     assert_eq!(head.tag(), tags::FALSE);
     print_stats("map_negb_over_list", &vm);
@@ -114,20 +114,20 @@ fn hforest_init_creates_forest() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let prev = Value::immediate(tags::O);
-    let value = Value::immediate(tags::O);
-    let prev_height = Value::immediate(tags::O);
+    let prev = Value::immediate(ctors::O);
+    let value = Value::immediate(ctors::O);
+    let prev_height = Value::immediate(ctors::O);
 
     let result = vm
         .call(funcs::HFOREST_INIT, &[prev, value, prev_height])
         .unwrap();
-    assert_eq!(result.tag(), tags::BUILD_HFOREST);
+    assert_eq!(result.tag(), ctors::BUILD_HFOREST);
 
     let roots = vm.tuple_field(result, 0);
-    assert_eq!(roots.tag(), tags::CONS);
+    assert_eq!(roots.tag(), ctors::CONS);
 
     let edges = vm.tuple_field(result, 1);
-    assert_eq!(edges.tag(), tags::CONS);
+    assert_eq!(edges.tag(), ctors::CONS);
     print_stats("hforest_init(O, O, O)", &vm);
 }
 
@@ -138,33 +138,33 @@ fn nat_ord_basic() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let zero = Value::immediate(tags::O);
+    let zero = Value::immediate(ctors::O);
     let one = peano(&mut vm, 1);
     let two = peano(&mut vm, 2);
 
     // nat_ord(0, 0) = Left
     let r = vm.call(funcs::NAT_ORD, &[zero, zero]).unwrap();
-    assert_eq!(r.tag(), tags::LEFT, "nat_ord(0,0) should be Left");
+    assert_eq!(r.tag(), ctors::LEFT, "nat_ord(0,0) should be Left");
 
     // nat_ord(0, 1) = Left
     let r = vm.call(funcs::NAT_ORD, &[zero, one]).unwrap();
-    assert_eq!(r.tag(), tags::LEFT, "nat_ord(0,1) should be Left");
+    assert_eq!(r.tag(), ctors::LEFT, "nat_ord(0,1) should be Left");
 
     // nat_ord(1, 0) = Right
     let r = vm.call(funcs::NAT_ORD, &[one, zero]).unwrap();
-    assert_eq!(r.tag(), tags::RIGHT, "nat_ord(1,0) should be Right");
+    assert_eq!(r.tag(), ctors::RIGHT, "nat_ord(1,0) should be Right");
 
     // nat_ord(1, 1) = Left
     let r = vm.call(funcs::NAT_ORD, &[one, one]).unwrap();
-    assert_eq!(r.tag(), tags::LEFT, "nat_ord(1,1) should be Left");
+    assert_eq!(r.tag(), ctors::LEFT, "nat_ord(1,1) should be Left");
 
     // nat_ord(1, 2) = Left
     let r = vm.call(funcs::NAT_ORD, &[one, two]).unwrap();
-    assert_eq!(r.tag(), tags::LEFT, "nat_ord(1,2) should be Left");
+    assert_eq!(r.tag(), ctors::LEFT, "nat_ord(1,2) should be Left");
 
     // nat_ord(2, 1) = Right
     let r = vm.call(funcs::NAT_ORD, &[two, one]).unwrap();
-    assert_eq!(r.tag(), tags::RIGHT, "nat_ord(2,1) should be Right");
+    assert_eq!(r.tag(), ctors::RIGHT, "nat_ord(2,1) should be Right");
 
     print_stats("nat_ord_basic", &vm);
 }
@@ -176,7 +176,7 @@ fn eqb_and_leb0_basic() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let n0 = Value::immediate(tags::O);
+    let n0 = Value::immediate(ctors::O);
     let n1 = peano(&mut vm, 1);
     let h = vm.global_value(funcs::NAT_ORD);
 
@@ -204,14 +204,14 @@ fn merge_sorted_basic() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let n0 = Value::immediate(tags::O);
+    let n0 = Value::immediate(ctors::O);
     let n1 = peano(&mut vm, 1);
-    let nil = Value::immediate(tags::NIL);
+    let nil = Value::immediate(ctors::NIL);
 
     // Simple: merge_sorted(nat_ord, [0], [1])
     let h = vm.global_value(funcs::NAT_ORD);
-    let l1 = vm.alloc_tuple(tags::CONS, &[n0, nil]).unwrap();
-    let l2 = vm.alloc_tuple(tags::CONS, &[n1, nil]).unwrap();
+    let l1 = vm.alloc_tuple(ctors::CONS, &[n0, nil]).unwrap();
+    let l2 = vm.alloc_tuple(ctors::CONS, &[n1, nil]).unwrap();
 
     let merged = vm.call(funcs::MERGE_SORTED, &[h, l1, l2]).unwrap();
     let merged_vec = list_to_vec(&vm, merged);
@@ -227,13 +227,13 @@ fn merge_dedup_sorted_basic() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let n0 = Value::immediate(tags::O);
+    let n0 = Value::immediate(ctors::O);
     let n1 = peano(&mut vm, 1);
-    let nil = Value::immediate(tags::NIL);
+    let nil = Value::immediate(ctors::NIL);
     let h = vm.global_value(funcs::NAT_ORD);
 
-    let l1 = vm.alloc_tuple(tags::CONS, &[n0, nil]).unwrap();
-    let l2 = vm.alloc_tuple(tags::CONS, &[n1, nil]).unwrap();
+    let l1 = vm.alloc_tuple(ctors::CONS, &[n0, nil]).unwrap();
+    let l2 = vm.alloc_tuple(ctors::CONS, &[n1, nil]).unwrap();
 
     let merged = vm.call(funcs::MERGE_DEDUP_SORTED, &[h, l1, l2]).unwrap();
     let merged_vec = list_to_vec(&vm, merged);
@@ -249,7 +249,7 @@ fn merge_dedup_sorted_overlap() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let n0 = Value::immediate(tags::O);
+    let n0 = Value::immediate(ctors::O);
     let n1 = peano(&mut vm, 1);
     let n2 = peano(&mut vm, 2);
     let n3 = peano(&mut vm, 3);
@@ -280,19 +280,19 @@ fn ordroot_basic() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let n0 = Value::immediate(tags::O);
+    let n0 = Value::immediate(ctors::O);
     let n1 = peano(&mut vm, 1);
 
     let h = vm.global_value(funcs::NAT_ORD);
     let ord = vm.call(funcs::ORDROOT, &[h]).unwrap();
 
     // Create two roots with different hashes
-    let r1 = vm.alloc_tuple(tags::BUILD_ROOT, &[n0, n0]).unwrap(); // root(hash=0, height=0)
-    let r2 = vm.alloc_tuple(tags::BUILD_ROOT, &[n1, n0]).unwrap(); // root(hash=1, height=0)
+    let r1 = vm.alloc_tuple(ctors::BUILD_ROOT, &[n0, n0]).unwrap(); // root(hash=0, height=0)
+    let r2 = vm.alloc_tuple(ctors::BUILD_ROOT, &[n1, n0]).unwrap(); // root(hash=1, height=0)
 
     // ordRoot(nat_ord)(r1, r2) should return Left (0 <= 1)
     let result = vm.apply(ord, &[r1, r2]).unwrap();
-    assert_eq!(result.tag(), tags::LEFT, "ordRoot(nat_ord)(root0, root1) should be Left");
+    assert_eq!(result.tag(), ctors::LEFT, "ordRoot(nat_ord)(root0, root1) should be Left");
 
     print_stats("ordroot_basic", &vm);
 }
@@ -304,14 +304,14 @@ fn merge_roots_basic() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let n0 = Value::immediate(tags::O);
+    let n0 = Value::immediate(ctors::O);
     let n1 = peano(&mut vm, 1);
-    let nil = Value::immediate(tags::NIL);
+    let nil = Value::immediate(ctors::NIL);
 
-    let r1 = vm.alloc_tuple(tags::BUILD_ROOT, &[n0, n0]).unwrap();
-    let r2 = vm.alloc_tuple(tags::BUILD_ROOT, &[n1, n0]).unwrap();
-    let l1 = vm.alloc_tuple(tags::CONS, &[r1, nil]).unwrap();
-    let l2 = vm.alloc_tuple(tags::CONS, &[r2, nil]).unwrap();
+    let r1 = vm.alloc_tuple(ctors::BUILD_ROOT, &[n0, n0]).unwrap();
+    let r2 = vm.alloc_tuple(ctors::BUILD_ROOT, &[n1, n0]).unwrap();
+    let l1 = vm.alloc_tuple(ctors::CONS, &[r1, nil]).unwrap();
+    let l2 = vm.alloc_tuple(ctors::CONS, &[r2, nil]).unwrap();
 
     let h = vm.global_value(funcs::NAT_ORD);
     let merged = vm.call(funcs::MERGE_ROOTS, &[h, l1, l2]).unwrap();
@@ -328,7 +328,7 @@ fn hforest_merge_basic() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let n0 = Value::immediate(tags::O);
+    let n0 = Value::immediate(ctors::O);
     let n1 = peano(&mut vm, 1);
     let n3 = peano(&mut vm, 3);
 
@@ -337,7 +337,7 @@ fn hforest_merge_basic() {
 
     let h = vm.global_value(funcs::NAT_ORD);
     let merged = vm.call(funcs::HFOREST_MERGE, &[h, f1, f2]).unwrap();
-    assert_eq!(merged.tag(), tags::BUILD_HFOREST);
+    assert_eq!(merged.tag(), ctors::BUILD_HFOREST);
     print_stats("hforest_merge_basic", &vm);
 }
 
@@ -350,15 +350,15 @@ fn hforest_lifecycle() {
 
     // --- List + higher-order function phase ---
 
-    let nil = Value::immediate(tags::NIL);
+    let nil = Value::immediate(ctors::NIL);
     let t = Value::immediate(tags::TRUE);
     let f = Value::immediate(tags::FALSE);
 
     // Build [True, False, True, False]
-    let list = vm.alloc_tuple(tags::CONS, &[f, nil]).unwrap();
-    let list = vm.alloc_tuple(tags::CONS, &[t, list]).unwrap();
-    let list = vm.alloc_tuple(tags::CONS, &[f, list]).unwrap();
-    let list = vm.alloc_tuple(tags::CONS, &[t, list]).unwrap();
+    let list = vm.alloc_tuple(ctors::CONS, &[f, nil]).unwrap();
+    let list = vm.alloc_tuple(ctors::CONS, &[t, list]).unwrap();
+    let list = vm.alloc_tuple(ctors::CONS, &[f, list]).unwrap();
+    let list = vm.alloc_tuple(ctors::CONS, &[t, list]).unwrap();
     assert_eq!(list_to_vec(&vm, list).len(), 4);
 
     // map(negb, list) → [False, True, False, True]
@@ -398,7 +398,7 @@ fn hforest_lifecycle() {
     // valid_roots removes roots whose hash appears as an edge child_hash (=value).
     // So we need prev ≠ value.
 
-    let n0 = Value::immediate(tags::O);
+    let n0 = Value::immediate(ctors::O);
     let n1 = peano(&mut vm, 1);
     let n2 = peano(&mut vm, 2);
     let n3 = peano(&mut vm, 3);
@@ -407,16 +407,16 @@ fn hforest_lifecycle() {
     // f1: root=0, edge(0→1, height=1)
     let _h = vm.global_value(funcs::NAT_ORD);
     let f1 = vm.call(funcs::HFOREST_INIT, &[n0, n1, n0]).unwrap();
-    assert_eq!(f1.tag(), tags::BUILD_HFOREST);
+    assert_eq!(f1.tag(), ctors::BUILD_HFOREST);
 
     // f2: root=2, edge(2→3, height=1)
     let f2 = vm.call(funcs::HFOREST_INIT, &[n2, n3, n0]).unwrap();
-    assert_eq!(f2.tag(), tags::BUILD_HFOREST);
+    assert_eq!(f2.tag(), ctors::BUILD_HFOREST);
 
     // hforest_merge(nat_ord, f1, f2)
     let h = vm.global_value(funcs::NAT_ORD);
     let merged = vm.call(funcs::HFOREST_MERGE, &[h, f1, f2]).unwrap();
-    assert_eq!(merged.tag(), tags::BUILD_HFOREST);
+    assert_eq!(merged.tag(), ctors::BUILD_HFOREST);
 
     let merged_roots = list_to_vec(&vm, vm.tuple_field(merged, 0));
     let merged_edges = list_to_vec(&vm, vm.tuple_field(merged, 1));
@@ -444,17 +444,17 @@ fn hforest_lifecycle() {
     let tips_vec = list_to_vec(&vm, tips);
     assert!(!tips_vec.is_empty(), "merged forest should have tips");
     for tip in &tips_vec {
-        assert_eq!(tip.tag(), tags::PAIR);
+        assert_eq!(tip.tag(), ctors::PAIR);
     }
 
     // hforest_insert(nat_ord, 4, 3, 0, merged) → (Pair new_forest was_new)
     // prev=4, value=3: new edge 4→3, prev≠value so it's a genuine insert
     let h = vm.global_value(funcs::NAT_ORD);
     let inserted = vm.call(funcs::HFOREST_INSERT, &[h, n4, n3, n0, merged]).unwrap();
-    assert_eq!(inserted.tag(), tags::PAIR);
+    assert_eq!(inserted.tag(), ctors::PAIR);
     let new_forest = vm.tuple_field(inserted, 0);
     let was_new = vm.tuple_field(inserted, 1);
-    assert_eq!(new_forest.tag(), tags::BUILD_HFOREST);
+    assert_eq!(new_forest.tag(), ctors::BUILD_HFOREST);
     assert_eq!(was_new.tag(), tags::TRUE);
 
     // hforest_contains(nat_ord, 4, new_forest) → True (root hash 4)

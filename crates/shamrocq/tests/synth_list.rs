@@ -3,7 +3,7 @@
 mod common;
 
 use common::{setup, peano, unpeano, list_to_vec, make_list, print_stats};
-use shamrocq::{tags, ctors, funcs, Program, Value, Vm};
+use shamrocq::{ctors, funcs, Program, Value, Vm};
 
 #[test]
 fn append_basic() {
@@ -36,7 +36,7 @@ fn append_empty() {
     let mut vm = Vm::new(&mut buf);
     vm.load_program(&prog).unwrap();
 
-    let nil = Value::immediate(tags::NIL);
+    let nil = Value::immediate(ctors::NIL);
     let n1 = peano(&mut vm, 1);
     let l = make_list(&mut vm, &[n1]);
 
@@ -119,7 +119,7 @@ fn zip_basic() {
     let result = vm.call(funcs::ZIP, &[l1, l2]).unwrap();
     let v = list_to_vec(&vm, result);
     assert_eq!(v.len(), 2);
-    assert_eq!(v[0].tag(), tags::PAIR);
+    assert_eq!(v[0].tag(), ctors::PAIR);
     assert_eq!(unpeano(&vm, vm.tuple_field(v[0], 0)), 1);
     assert_eq!(unpeano(&vm, vm.tuple_field(v[0], 1)), 3);
     assert_eq!(unpeano(&vm, vm.tuple_field(v[1], 0)), 2);

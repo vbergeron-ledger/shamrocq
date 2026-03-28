@@ -1,13 +1,17 @@
 const KIND_IMM: u32 = 0b00 << 30;
 const KIND_TUPLE: u32 = 0b01 << 30;
-const KIND_CLOSURE: u32 = 0b10 << 30;
-const KIND_BARE_FN: u32 = 0b11 << 30;
+const KIND_INTEGER: u32 = 0b10 << 30;
+const KIND_CLOSURE: u32 = 0b110 << 29;
+const KIND_BARE_FN: u32 = 0b111 << 29;
 
 const TAG_SHIFT: u32 = 24;
 const TAG_MASK: u32 = 0x3F;
-const PAYLOAD_MASK: u32 = 0x00FF_FFFF;
-const KIND_MASK: u32 = 0xC000_0000;
-const CALLABLE_BIT: u32 = 1 << 31;
+const TUPLE_PAYLOAD_MASK: u32 = 0x00FF_FFFF;
+const INTEGER_MASK: u32 = 0x3FFF_FFFF;
+const CALLABLE_MASK: u32 = 0xC000_0000;
+const CALLABLE_BITS: u32 = 0xC000_0000;
+const CALLABLE_PAYLOAD: u32 = 0x1FFF_FFFF;
+const KIND3_MASK: u32 = 0xE000_0000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -22,11 +26,14 @@ impl Value {
         Value(KIND_TUPLE | ((tag as u32) << TAG_SHIFT) | (offset as u32))
     }
 
+    pub const fn integer(n: i32) -> Self {
+        Value(KIND_INTEGER | ((n as u32) & INTEGER_MASK))
+    }
+
     pub const fn closure(offset: usize) -> Self {
         Value(KIND_CLOSURE | (offset as u32))
     }
 
-    /// Zero-capture closure: code address stored directly in the value word.
     pub const fn bare_fn(code_addr: u16) -> Self {
         Value(KIND_BARE_FN | (code_addr as u32))
     }
@@ -36,32 +43,43 @@ impl Value {
     }
 
     pub const fn offset(self) -> usize {
-        (self.0 & PAYLOAD_MASK) as usize
+        (self.0 & TUPLE_PAYLOAD_MASK) as usize
+    }
+
+    pub const fn closure_offset(self) -> usize {
+        (self.0 & CALLABLE_PAYLOAD) as usize
     }
 
     pub const fn code_addr(self) -> u16 {
-        (self.0 & 0xFFFF) as u16
+        (self.0 & CALLABLE_PAYLOAD) as u16
+    }
+
+    pub const fn integer_value(self) -> i32 {
+        ((self.0 << 2) as i32) >> 2
     }
 
     pub const fn is_immediate(self) -> bool {
-        self.0 & KIND_MASK == KIND_IMM
+        self.0 & CALLABLE_MASK == KIND_IMM
     }
 
     pub const fn is_tuple(self) -> bool {
-        self.0 & KIND_MASK == KIND_TUPLE
+        self.0 & CALLABLE_MASK == KIND_TUPLE
+    }
+
+    pub const fn is_integer(self) -> bool {
+        self.0 & CALLABLE_MASK == KIND_INTEGER
     }
 
     pub const fn is_closure(self) -> bool {
-        self.0 & KIND_MASK == KIND_CLOSURE
+        self.0 & KIND3_MASK == KIND_CLOSURE
     }
 
     pub const fn is_bare_fn(self) -> bool {
-        self.0 & KIND_MASK == KIND_BARE_FN
+        self.0 & KIND3_MASK == KIND_BARE_FN
     }
 
-    /// True for both heap closures and bare function pointers.
     pub const fn is_callable(self) -> bool {
-        self.0 & CALLABLE_BIT != 0
+        self.0 & CALLABLE_MASK == CALLABLE_BITS
     }
 
     pub const fn raw(self) -> u32 {
@@ -79,10 +97,12 @@ impl core::fmt::Debug for Value {
             write!(f, "Imm(tag={})", self.tag())
         } else if self.is_tuple() {
             write!(f, "Tuple(tag={}, @{})", self.tag(), self.offset())
+        } else if self.is_integer() {
+            write!(f, "Int({})", self.integer_value())
         } else if self.is_bare_fn() {
             write!(f, "Fn(pc={})", self.code_addr())
         } else {
-            write!(f, "Closure(@{})", self.offset())
+            write!(f, "Closure(@{})", self.closure_offset())
         }
     }
 }
@@ -90,14 +110,4 @@ impl core::fmt::Debug for Value {
 pub mod tags {
     pub const TRUE: u8 = 0;
     pub const FALSE: u8 = 1;
-    pub const NIL: u8 = 2;
-    pub const CONS: u8 = 3;
-    pub const O: u8 = 4;
-    pub const S: u8 = 5;
-    pub const LEFT: u8 = 6;
-    pub const RIGHT: u8 = 7;
-    pub const PAIR: u8 = 8;
-    pub const BUILD_ROOT: u8 = 9;
-    pub const BUILD_EDGE: u8 = 10;
-    pub const BUILD_HFOREST: u8 = 11;
 }

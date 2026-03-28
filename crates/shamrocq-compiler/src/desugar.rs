@@ -1,11 +1,18 @@
 use crate::parser::Sexp;
 
+#[derive(Debug, Clone, Copy)]
+pub enum PrimOp {
+    Add, Sub, Mul, Div, Neg, Eq, Lt,
+}
+
 /// High-level IR after desugaring, before variable resolution.
 #[derive(Debug, Clone)]
 pub enum Expr {
     Var(String),
+    Int(i32),
     /// Nullary or N-ary constructor application via quasiquote: `(Tag field...)
     Ctor(String, Vec<Expr>),
+    PrimOp(PrimOp, Vec<Expr>),
     Lambda(String, Box<Expr>),
     App(Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -67,7 +74,13 @@ fn desugar_define(items: &[Sexp]) -> Result<Define, String> {
 
 fn desugar_expr(sexp: &Sexp) -> Result<Expr, String> {
     match sexp {
-        Sexp::Atom(s) => Ok(Expr::Var(s.clone())),
+        Sexp::Atom(s) => {
+            if let Ok(n) = s.parse::<i32>() {
+                Ok(Expr::Int(n))
+            } else {
+                Ok(Expr::Var(s.clone()))
+            }
+        }
         Sexp::List(items) if items.is_empty() => Err("empty application".to_string()),
         Sexp::List(items) => {
             let head = &items[0];
@@ -83,12 +96,36 @@ fn desugar_expr(sexp: &Sexp) -> Result<Expr, String> {
                     "quote" => return desugar_quote(&items[1]),
                     "quasiquote" => return desugar_quasiquote(&items[1]),
                     "error" => return Ok(Expr::Error),
+                    "+" => return desugar_binop(PrimOp::Add, items),
+                    "-" => return desugar_binop(PrimOp::Sub, items),
+                    "*" => return desugar_binop(PrimOp::Mul, items),
+                    "/" => return desugar_binop(PrimOp::Div, items),
+                    "neg" => return desugar_unop(PrimOp::Neg, items),
+                    "=" => return desugar_binop(PrimOp::Eq, items),
+                    "<" => return desugar_binop(PrimOp::Lt, items),
                     _ => {}
                 }
             }
             desugar_application(items)
         }
     }
+}
+
+fn desugar_binop(op: PrimOp, items: &[Sexp]) -> Result<Expr, String> {
+    if items.len() != 3 {
+        return Err(format!("{:?} expects 2 arguments", op));
+    }
+    let a = desugar_expr(&items[1])?;
+    let b = desugar_expr(&items[2])?;
+    Ok(Expr::PrimOp(op, vec![a, b]))
+}
+
+fn desugar_unop(op: PrimOp, items: &[Sexp]) -> Result<Expr, String> {
+    if items.len() != 2 {
+        return Err(format!("{:?} expects 1 argument", op));
+    }
+    let a = desugar_expr(&items[1])?;
+    Ok(Expr::PrimOp(op, vec![a]))
 }
 
 /// (lambda (x) body) -> Lambda("x", body)

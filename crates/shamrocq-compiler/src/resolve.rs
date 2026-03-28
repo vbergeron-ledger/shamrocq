@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::desugar::{Define, Expr};
+use crate::desugar::{Define, Expr, PrimOp};
 
 /// Resolved IR: variables are indices, constructors are tag IDs.
 #[derive(Debug, Clone)]
@@ -9,8 +9,10 @@ pub enum RExpr {
     Local(u8),
     /// Global variable by slot index
     Global(u16),
+    Int(i32),
     /// Constructor: tag id + resolved field exprs
     Ctor(u8, Vec<RExpr>),
+    PrimOp(PrimOp, Vec<RExpr>),
     Lambda(Box<RExpr>),
     App(Box<RExpr>, Box<RExpr>),
     Let(Box<RExpr>, Box<RExpr>),
@@ -147,7 +149,7 @@ pub fn resolve_program(
 }
 
 fn is_atomic(expr: &RExpr) -> bool {
-    matches!(expr, RExpr::Local(_) | RExpr::Global(_))
+    matches!(expr, RExpr::Local(_) | RExpr::Global(_) | RExpr::Int(_))
 }
 
 /// Shift all free de Bruijn indices >= cutoff by `amount`.
@@ -161,8 +163,12 @@ fn shift(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
             }
         }
         RExpr::Global(idx) => RExpr::Global(*idx),
+        RExpr::Int(n) => RExpr::Int(*n),
         RExpr::Ctor(tag, fields) => {
             RExpr::Ctor(*tag, fields.iter().map(|f| shift(f, cutoff, amount)).collect())
+        }
+        RExpr::PrimOp(op, args) => {
+            RExpr::PrimOp(*op, args.iter().map(|a| shift(a, cutoff, amount)).collect())
         }
         RExpr::Lambda(body) => RExpr::Lambda(Box::new(shift(body, cutoff + 1, amount))),
         RExpr::App(func, arg) => RExpr::App(
@@ -197,11 +203,16 @@ fn shift(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
 /// temporaries on the stack when BIND pushes match fields.
 fn anf_normalize(expr: RExpr) -> RExpr {
     match expr {
-        RExpr::Local(_) | RExpr::Global(_) | RExpr::Error => expr,
+        RExpr::Local(_) | RExpr::Global(_) | RExpr::Int(_) | RExpr::Error => expr,
 
         RExpr::Ctor(tag, fields) => {
             let fields: Vec<RExpr> = fields.into_iter().map(anf_normalize).collect();
             lift_ctor_fields(tag, fields)
+        }
+
+        RExpr::PrimOp(op, args) => {
+            let args: Vec<RExpr> = args.into_iter().map(anf_normalize).collect();
+            lift_primop_args(op, args)
         }
 
         RExpr::Lambda(body) => RExpr::Lambda(Box::new(anf_normalize(*body))),
@@ -283,6 +294,36 @@ fn lift_ctor_fields(tag: u8, fields: Vec<RExpr>) -> RExpr {
     result
 }
 
+fn lift_primop_args(op: PrimOp, args: Vec<RExpr>) -> RExpr {
+    let non_atomic: Vec<usize> = (0..args.len())
+        .filter(|i| !is_atomic(&args[*i]))
+        .collect();
+
+    if non_atomic.is_empty() {
+        return RExpr::PrimOp(op, args);
+    }
+
+    let k = non_atomic.len();
+
+    let mut primop_args = Vec::with_capacity(args.len());
+    for (i, arg) in args.iter().enumerate() {
+        if let Some(j) = non_atomic.iter().position(|&idx| idx == i) {
+            primop_args.push(RExpr::Local((k - 1 - j) as u8));
+        } else {
+            primop_args.push(shift(arg, 0, k));
+        }
+    }
+
+    let mut result = RExpr::PrimOp(op, primop_args);
+
+    for j in (0..k).rev() {
+        let val = shift(&args[non_atomic[j]], 0, j);
+        result = RExpr::Let(Box::new(val), Box::new(result));
+    }
+
+    result
+}
+
 fn resolve_expr(
     expr: &Expr,
     locals: &[String],
@@ -291,7 +332,6 @@ fn resolve_expr(
 ) -> Result<RExpr, String> {
     match expr {
         Expr::Var(name) => {
-            // Search locals from innermost (end of vec) outward.
             for (i, local) in locals.iter().rev().enumerate() {
                 if local == name {
                     return Ok(RExpr::Local(i as u8));
@@ -301,6 +341,16 @@ fn resolve_expr(
                 return Ok(RExpr::Global(idx));
             }
             Err(format!("unresolved variable: {}", name))
+        }
+
+        Expr::Int(n) => Ok(RExpr::Int(*n)),
+
+        Expr::PrimOp(op, args) => {
+            let rargs = args
+                .iter()
+                .map(|a| resolve_expr(a, locals, tags, globals))
+                .collect::<Result<_, _>>()?;
+            Ok(RExpr::PrimOp(*op, rargs))
         }
 
         Expr::Ctor(name, fields) => {

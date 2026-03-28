@@ -1,4 +1,5 @@
 use crate::bytecode::{Emitter, ProgramHeader};
+use crate::desugar::PrimOp;
 use crate::resolve::{RDefine, RExpr, RMatchCase};
 
 pub struct CompiledProgram {
@@ -235,6 +236,31 @@ impl Compiler {
                 self.compile_match(cases, ctx, tail);
             }
 
+            RExpr::Int(n) => {
+                self.emitter.emit_int_const(*n);
+                if tail {
+                    self.emitter.emit_ret();
+                }
+            }
+
+            RExpr::PrimOp(op, args) => {
+                for arg in args {
+                    self.compile_expr(arg, ctx, false);
+                }
+                match op {
+                    PrimOp::Add => self.emitter.emit_add(),
+                    PrimOp::Sub => self.emitter.emit_sub(),
+                    PrimOp::Mul => self.emitter.emit_mul(),
+                    PrimOp::Div => self.emitter.emit_div(),
+                    PrimOp::Neg => self.emitter.emit_neg(),
+                    PrimOp::Eq  => self.emitter.emit_eq(),
+                    PrimOp::Lt  => self.emitter.emit_lt(),
+                }
+                if tail {
+                    self.emitter.emit_ret();
+                }
+            }
+
             RExpr::Error => {
                 self.emitter.emit_error();
             }
@@ -322,10 +348,15 @@ fn collect_free(expr: &RExpr, bound: usize, free: &mut Vec<u8>) {
                 free.push((idx - bound) as u8);
             }
         }
-        RExpr::Global(_) | RExpr::Error => {}
+        RExpr::Global(_) | RExpr::Int(_) | RExpr::Error => {}
         RExpr::Ctor(_, fields) => {
             for f in fields {
                 collect_free(f, bound, free);
+            }
+        }
+        RExpr::PrimOp(_, args) => {
+            for a in args {
+                collect_free(a, bound, free);
             }
         }
         RExpr::Lambda(body) => {

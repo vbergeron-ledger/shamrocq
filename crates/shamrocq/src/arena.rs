@@ -95,22 +95,22 @@ impl<'a> Arena<'a> {
     }
 
     pub fn closure_code(&self, val: Value) -> u16 {
-        let header = self.read_word(val.offset());
+        let header = self.read_word(val.closure_offset());
         (header >> 16) as u16
     }
 
     pub fn closure_capture_count(&self, val: Value) -> usize {
-        let header = self.read_word(val.offset());
+        let header = self.read_word(val.closure_offset());
         (header & 0xFFFF) as usize
     }
 
     pub fn closure_capture(&self, val: Value, idx: usize) -> Value {
-        let base = val.offset();
+        let base = val.closure_offset();
         Value::from_raw(self.read_word(base + (1 + idx) * 4))
     }
 
     pub fn closure_set_capture(&mut self, closure: Value, idx: usize, val: Value) {
-        let base = closure.offset();
+        let base = closure.closure_offset();
         self.write_word(base + (1 + idx) * 4, val.raw());
     }
 
