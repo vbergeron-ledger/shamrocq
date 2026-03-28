@@ -27,6 +27,11 @@ pub mod op {
     pub const NEG: u8 = 0x15;
     pub const EQ: u8 = 0x16;
     pub const LT: u8 = 0x17;
+    pub const BYTES_CONST: u8 = 0x18;
+    pub const BYTES_LEN: u8 = 0x19;
+    pub const BYTES_GET: u8 = 0x1A;
+    pub const BYTES_EQ: u8 = 0x1B;
+    pub const BYTES_CONCAT: u8 = 0x1C;
 }
 
 /// Binary encoding helpers used by the compiler to emit bytecode,
@@ -175,6 +180,16 @@ impl Emitter {
     pub fn emit_neg(&mut self) { self.code.push(op::NEG); }
     pub fn emit_eq(&mut self)  { self.code.push(op::EQ); }
     pub fn emit_lt(&mut self)  { self.code.push(op::LT); }
+
+    pub fn emit_bytes_const(&mut self, data: &[u8]) {
+        self.code.push(op::BYTES_CONST);
+        self.code.push(data.len() as u8);
+        self.code.extend_from_slice(data);
+    }
+    pub fn emit_bytes_len(&mut self)    { self.code.push(op::BYTES_LEN); }
+    pub fn emit_bytes_get(&mut self)    { self.code.push(op::BYTES_GET); }
+    pub fn emit_bytes_eq(&mut self)     { self.code.push(op::BYTES_EQ); }
+    pub fn emit_bytes_concat(&mut self) { self.code.push(op::BYTES_CONCAT); }
 }
 
 /// Header prepended to the compiled bytecode blob.

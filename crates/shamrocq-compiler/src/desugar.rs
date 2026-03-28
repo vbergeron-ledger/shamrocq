@@ -3,6 +3,7 @@ use crate::parser::Sexp;
 #[derive(Debug, Clone, Copy)]
 pub enum PrimOp {
     Add, Sub, Mul, Div, Neg, Eq, Lt,
+    BytesLen, BytesGet, BytesEq, BytesCat,
 }
 
 /// High-level IR after desugaring, before variable resolution.
@@ -10,6 +11,7 @@ pub enum PrimOp {
 pub enum Expr {
     Var(String),
     Int(i32),
+    Bytes(Vec<u8>),
     /// Nullary or N-ary constructor application via quasiquote: `(Tag field...)
     Ctor(String, Vec<Expr>),
     PrimOp(PrimOp, Vec<Expr>),
@@ -77,6 +79,8 @@ fn desugar_expr(sexp: &Sexp) -> Result<Expr, String> {
         Sexp::Atom(s) => {
             if let Ok(n) = s.parse::<i32>() {
                 Ok(Expr::Int(n))
+            } else if s.starts_with('"') && s.ends_with('"') {
+                Ok(Expr::Bytes(s[1..s.len() - 1].as_bytes().to_vec()))
             } else {
                 Ok(Expr::Var(s.clone()))
             }
@@ -103,6 +107,10 @@ fn desugar_expr(sexp: &Sexp) -> Result<Expr, String> {
                     "neg" => return desugar_unop(PrimOp::Neg, items),
                     "=" => return desugar_binop(PrimOp::Eq, items),
                     "<" => return desugar_binop(PrimOp::Lt, items),
+                    "bytes-len" => return desugar_unop(PrimOp::BytesLen, items),
+                    "bytes-get" => return desugar_binop(PrimOp::BytesGet, items),
+                    "bytes-eq" => return desugar_binop(PrimOp::BytesEq, items),
+                    "bytes-cat" => return desugar_binop(PrimOp::BytesCat, items),
                     _ => {}
                 }
             }

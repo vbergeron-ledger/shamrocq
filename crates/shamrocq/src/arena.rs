@@ -114,6 +114,33 @@ impl<'a> Arena<'a> {
         self.write_word(base + (1 + idx) * 4, val.raw());
     }
 
+    pub fn alloc_bytes(&mut self, data: &[u8]) -> Result<Value, ArenaError> {
+        let len = data.len();
+        let words = (len + 3) / 4;
+        let offset = self.alloc(words)?;
+        self.buf[offset..offset + len].copy_from_slice(data);
+        Ok(Value::bytes(len as u8, offset))
+    }
+
+    pub fn bytes_data(&self, val: Value) -> &[u8] {
+        let offset = val.bytes_offset();
+        let len = val.bytes_len();
+        &self.buf[offset..offset + len]
+    }
+
+    pub fn bytes_concat(&mut self, a: Value, b: Value) -> Result<Value, ArenaError> {
+        let a_off = a.bytes_offset();
+        let a_len = a.bytes_len();
+        let b_off = b.bytes_offset();
+        let b_len = b.bytes_len();
+        let total = a_len + b_len;
+        let words = (total + 3) / 4;
+        let offset = self.alloc(words)?;
+        self.buf.copy_within(a_off..a_off + a_len, offset);
+        self.buf.copy_within(b_off..b_off + b_len, offset + a_len);
+        Ok(Value::bytes(total as u8, offset))
+    }
+
     // -- stack (grows downward) --
 
     pub fn stack_push(&mut self, val: Value) -> Result<(), ArenaError> {

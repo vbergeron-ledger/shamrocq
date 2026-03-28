@@ -10,6 +10,7 @@ pub enum RExpr {
     /// Global variable by slot index
     Global(u16),
     Int(i32),
+    Bytes(Vec<u8>),
     /// Constructor: tag id + resolved field exprs
     Ctor(u8, Vec<RExpr>),
     PrimOp(PrimOp, Vec<RExpr>),
@@ -149,7 +150,7 @@ pub fn resolve_program(
 }
 
 fn is_atomic(expr: &RExpr) -> bool {
-    matches!(expr, RExpr::Local(_) | RExpr::Global(_) | RExpr::Int(_))
+    matches!(expr, RExpr::Local(_) | RExpr::Global(_) | RExpr::Int(_) | RExpr::Bytes(_))
 }
 
 /// Shift all free de Bruijn indices >= cutoff by `amount`.
@@ -164,6 +165,7 @@ fn shift(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
         }
         RExpr::Global(idx) => RExpr::Global(*idx),
         RExpr::Int(n) => RExpr::Int(*n),
+        RExpr::Bytes(data) => RExpr::Bytes(data.clone()),
         RExpr::Ctor(tag, fields) => {
             RExpr::Ctor(*tag, fields.iter().map(|f| shift(f, cutoff, amount)).collect())
         }
@@ -203,7 +205,7 @@ fn shift(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
 /// temporaries on the stack when BIND pushes match fields.
 fn anf_normalize(expr: RExpr) -> RExpr {
     match expr {
-        RExpr::Local(_) | RExpr::Global(_) | RExpr::Int(_) | RExpr::Error => expr,
+        RExpr::Local(_) | RExpr::Global(_) | RExpr::Int(_) | RExpr::Bytes(_) | RExpr::Error => expr,
 
         RExpr::Ctor(tag, fields) => {
             let fields: Vec<RExpr> = fields.into_iter().map(anf_normalize).collect();
@@ -344,6 +346,7 @@ fn resolve_expr(
         }
 
         Expr::Int(n) => Ok(RExpr::Int(*n)),
+        Expr::Bytes(data) => Ok(RExpr::Bytes(data.clone())),
 
         Expr::PrimOp(op, args) => {
             let rargs = args

@@ -243,6 +243,13 @@ impl Compiler {
                 }
             }
 
+            RExpr::Bytes(data) => {
+                self.emitter.emit_bytes_const(data);
+                if tail {
+                    self.emitter.emit_ret();
+                }
+            }
+
             RExpr::PrimOp(op, args) => {
                 for arg in args {
                     self.compile_expr(arg, ctx, false);
@@ -255,6 +262,10 @@ impl Compiler {
                     PrimOp::Neg => self.emitter.emit_neg(),
                     PrimOp::Eq  => self.emitter.emit_eq(),
                     PrimOp::Lt  => self.emitter.emit_lt(),
+                    PrimOp::BytesLen  => self.emitter.emit_bytes_len(),
+                    PrimOp::BytesGet  => self.emitter.emit_bytes_get(),
+                    PrimOp::BytesEq   => self.emitter.emit_bytes_eq(),
+                    PrimOp::BytesCat  => self.emitter.emit_bytes_concat(),
                 }
                 if tail {
                     self.emitter.emit_ret();
@@ -348,7 +359,7 @@ fn collect_free(expr: &RExpr, bound: usize, free: &mut Vec<u8>) {
                 free.push((idx - bound) as u8);
             }
         }
-        RExpr::Global(_) | RExpr::Int(_) | RExpr::Error => {}
+        RExpr::Global(_) | RExpr::Int(_) | RExpr::Bytes(_) | RExpr::Error => {}
         RExpr::Ctor(_, fields) => {
             for f in fields {
                 collect_free(f, bound, free);

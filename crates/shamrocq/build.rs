@@ -26,6 +26,7 @@ mod integration {
                 if path.extension().and_then(|e| e.to_str()) == Some("scm")
                     && name != "macros_extr.scm"
                     && name != "synth_int.scm"
+                    && name != "synth_bytes.scm"
                 {
                     Some(path)
                 } else {

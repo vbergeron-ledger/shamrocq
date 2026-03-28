@@ -1,5 +1,6 @@
 const KIND_CTOR: u32 = 0b000 << 29;
 const KIND_INTEGER: u32 = 0b001 << 29;
+const KIND_BYTES: u32 = 0b010 << 29;
 const KIND_CLOSURE: u32 = 0b110 << 29;
 const KIND_BARE_FN: u32 = 0b111 << 29;
 
@@ -68,6 +69,22 @@ impl Value {
         self.0 & KIND_MASK == KIND_BARE_FN
     }
 
+    pub const fn bytes(len: u8, byte_offset: usize) -> Self {
+        Value(KIND_BYTES | ((len as u32) << TAG_SHIFT) | ((byte_offset >> 2) as u32))
+    }
+
+    pub const fn bytes_len(self) -> usize {
+        ((self.0 >> TAG_SHIFT) & TAG_MASK) as usize
+    }
+
+    pub const fn bytes_offset(self) -> usize {
+        ((self.0 & PAYLOAD_21) as usize) << 2
+    }
+
+    pub const fn is_bytes(self) -> bool {
+        self.0 & KIND_MASK == KIND_BYTES
+    }
+
     pub const fn is_callable(self) -> bool {
         self.0 & CALLABLE_MASK == CALLABLE_BITS
     }
@@ -87,6 +104,8 @@ impl core::fmt::Debug for Value {
             write!(f, "Ctor(tag={}, @{})", self.tag(), self.offset())
         } else if self.is_integer() {
             write!(f, "Int({})", self.integer_value())
+        } else if self.is_bytes() {
+            write!(f, "Bytes(len={}, @{})", self.bytes_len(), self.bytes_offset())
         } else if self.is_bare_fn() {
             write!(f, "Fn(pc={})", self.code_addr())
         } else {

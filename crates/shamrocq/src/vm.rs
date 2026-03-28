@@ -29,6 +29,11 @@ mod op {
     pub const NEG: u8 = 0x15;
     pub const EQ: u8 = 0x16;
     pub const LT: u8 = 0x17;
+    pub const BYTES_CONST: u8 = 0x18;
+    pub const BYTES_LEN: u8 = 0x19;
+    pub const BYTES_GET: u8 = 0x1A;
+    pub const BYTES_EQ: u8 = 0x1B;
+    pub const BYTES_CONCAT: u8 = 0x1C;
 }
 
 #[derive(Debug)]
@@ -38,6 +43,8 @@ pub enum VmError {
     InvalidBytecode,
     NotAClosure,
     StackOverflow,
+    IndexOutOfBounds,
+    BytesOverflow,
 }
 
 impl From<ArenaError> for VmError {
@@ -492,6 +499,52 @@ impl<'buf> Vm<'buf> {
                     let a = self.arena.stack_pop().integer_value();
                     let tag = if a < b { crate::value::tags::TRUE } else { crate::value::tags::FALSE };
                     self.arena.stack_push(Value::ctor(tag, 0))?;
+                }
+
+                op::BYTES_CONST => {
+                    let len = code[pc] as usize;
+                    pc += 1;
+                    let val = self.arena.alloc_bytes(&code[pc..pc + len])?;
+                    pc += len;
+                    self.record_heap();
+                    self.arena.stack_push(val)?;
+                    self.record_stack();
+                }
+
+                op::BYTES_LEN => {
+                    let v = self.arena.stack_pop();
+                    self.arena.stack_push(Value::integer(v.bytes_len() as i32))?;
+                }
+
+                op::BYTES_GET => {
+                    let idx = self.arena.stack_pop().integer_value() as usize;
+                    let v = self.arena.stack_pop();
+                    if idx >= v.bytes_len() {
+                        return Err(VmError::IndexOutOfBounds);
+                    }
+                    let data = self.arena.bytes_data(v);
+                    self.arena.stack_push(Value::integer(data[idx] as i32))?;
+                }
+
+                op::BYTES_EQ => {
+                    let b = self.arena.stack_pop();
+                    let a = self.arena.stack_pop();
+                    let eq = a.bytes_len() == b.bytes_len()
+                        && self.arena.bytes_data(a) == self.arena.bytes_data(b);
+                    let tag = if eq { crate::value::tags::TRUE } else { crate::value::tags::FALSE };
+                    self.arena.stack_push(Value::ctor(tag, 0))?;
+                }
+
+                op::BYTES_CONCAT => {
+                    let b = self.arena.stack_pop();
+                    let a = self.arena.stack_pop();
+                    if a.bytes_len() + b.bytes_len() > 255 {
+                        return Err(VmError::BytesOverflow);
+                    }
+                    let val = self.arena.bytes_concat(a, b)?;
+                    self.record_heap();
+                    self.arena.stack_push(val)?;
+                    self.record_stack();
                 }
 
                 _ => return Err(VmError::InvalidBytecode),
