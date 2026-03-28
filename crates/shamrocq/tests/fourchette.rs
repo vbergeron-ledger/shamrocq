@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{setup, peano, unpeano, list_to_vec, print_stats};
+use common::{setup, peano, unpeano, list_to_vec, make_list, print_stats};
 use shamrocq::{tags, funcs, Program, Value, Vm};
 
 #[test]
@@ -240,6 +240,37 @@ fn merge_dedup_sorted_basic() {
     assert_eq!(merged_vec.len(), 2, "merge_dedup_sorted([0], [1]) should have 2 elements");
 
     print_stats("merge_dedup_sorted_basic", &vm);
+}
+
+#[test]
+fn merge_dedup_sorted_overlap() {
+    let (mut buf, bytecode) = setup();
+    let prog = Program::from_blob(bytecode).unwrap();
+    let mut vm = Vm::new(&mut buf);
+    vm.load_program(&prog).unwrap();
+
+    let n0 = Value::immediate(tags::O);
+    let n1 = peano(&mut vm, 1);
+    let n2 = peano(&mut vm, 2);
+    let n3 = peano(&mut vm, 3);
+
+    // l1 = [0, 1, 2]
+    let l1 = make_list(&mut vm, &[n0, n1, n2]);
+    // l2 = [1, 2, 3]  — shares 1 and 2 with l1
+    let l2 = make_list(&mut vm, &[n1, n2, n3]);
+
+    let h = vm.global_value(funcs::NAT_ORD);
+    let merged = vm.call(funcs::MERGE_DEDUP_SORTED, &[h, l1, l2]).unwrap();
+    let merged_vec = list_to_vec(&vm, merged);
+
+    // Duplicates (1, 2) must be removed → [0, 1, 2, 3]
+    assert_eq!(merged_vec.len(), 4, "merge_dedup_sorted([0,1,2],[1,2,3]) should have 4 elements");
+    assert_eq!(unpeano(&vm, merged_vec[0]), 0);
+    assert_eq!(unpeano(&vm, merged_vec[1]), 1);
+    assert_eq!(unpeano(&vm, merged_vec[2]), 2);
+    assert_eq!(unpeano(&vm, merged_vec[3]), 3);
+
+    print_stats("merge_dedup_sorted([0,1,2],[1,2,3])", &vm);
 }
 
 #[test]
