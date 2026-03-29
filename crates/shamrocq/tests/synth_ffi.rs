@@ -31,6 +31,33 @@ fn negate_it(_vm: &mut Vm<'_>, arg: Value) -> Result<Value, VmError> {
     Ok(Value::integer(-arg.integer_value()))
 }
 
+fn clamp_packed(vm: &mut Vm<'_>, arg: Value) -> Result<Value, VmError> {
+    let lo = vm.ctor_field(arg, 0).integer_value();
+    let hi = vm.ctor_field(arg, 1).integer_value();
+    let x  = vm.ctor_field(arg, 2).integer_value();
+    Ok(Value::integer(x.max(lo).min(hi)))
+}
+
+#[test]
+fn foreign_fn_multiarg_syntax() {
+    let src = r#"
+        (define-foreign clamp (lo hi x))
+    "#;
+    let (blob, funcs) = compile_inline(src);
+    let prog = Program::from_blob(&blob).unwrap();
+    let mut buf = vec![0u8; 65536];
+    let mut vm = Vm::new(&mut buf);
+    vm.register_foreign(0, clamp_packed);
+    vm.load_program(&prog).unwrap();
+
+    let f = funcs["clamp"];
+    let lo = Value::integer(0);
+    let hi = Value::integer(100);
+    assert_eq!(vm.call(f, &[lo, hi, Value::integer(42)]).unwrap().integer_value(), 42);
+    assert_eq!(vm.call(f, &[lo, hi, Value::integer(-5)]).unwrap().integer_value(), 0);
+    assert_eq!(vm.call(f, &[lo, hi, Value::integer(200)]).unwrap().integer_value(), 100);
+}
+
 #[test]
 fn foreign_fn_direct_call() {
     let src = r#"

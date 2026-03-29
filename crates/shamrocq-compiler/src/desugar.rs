@@ -56,16 +56,61 @@ pub fn desugar_program(sexps: &[Sexp]) -> Result<Vec<Define>, String> {
                             defs.push(def);
                         }
                         "define-foreign" => {
-                            if items.len() != 2 {
-                                return Err("define-foreign expects exactly one name".to_string());
+                            match items.len() {
+                                2 => {
+                                    // (define-foreign name) — 1-arg, host receives raw Value
+                                    let name = items[1]
+                                        .as_atom()
+                                        .ok_or("define-foreign name must be an atom")?
+                                        .to_string();
+                                    let idx = n_foreign;
+                                    n_foreign += 1;
+                                    defs.push(Define { name, body: Expr::Foreign(idx) });
+                                }
+                                3 => {
+                                    // (define-foreign name (p1 p2 ... pN)) — N-arg,
+                                    // compiler generates curried wrapper that packs args
+                                    // into a constructor; host unpacks with ctor_field().
+                                    let name = items[1]
+                                        .as_atom()
+                                        .ok_or("define-foreign name must be an atom")?
+                                        .to_string();
+                                    let params = items[2]
+                                        .as_list()
+                                        .ok_or("define-foreign params must be a list")?;
+                                    if params.is_empty() {
+                                        return Err("define-foreign params list must not be empty".to_string());
+                                    }
+                                    let param_names: Vec<String> = params
+                                        .iter()
+                                        .map(|p| {
+                                            p.as_atom()
+                                                .ok_or("define-foreign param must be an atom".to_string())
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<_, _>>()?;
+                                    let idx = n_foreign;
+                                    n_foreign += 1;
+                                    // Pack all params into a single constructor so the
+                                    // host receives one Value and reads fields by index.
+                                    let pack_tag = format!("__ffi{}", idx);
+                                    let ctor_fields: Vec<Expr> = param_names
+                                        .iter()
+                                        .map(|p| Expr::Var(p.clone()))
+                                        .collect();
+                                    let mut body = Expr::App(
+                                        Box::new(Expr::Foreign(idx)),
+                                        Box::new(Expr::Ctor(pack_tag, ctor_fields)),
+                                    );
+                                    for param in param_names.iter().rev() {
+                                        body = Expr::Lambda(param.clone(), Box::new(body));
+                                    }
+                                    defs.push(Define { name, body });
+                                }
+                                _ => return Err(
+                                    "define-foreign expects a name or a name and a params list".to_string()
+                                ),
                             }
-                            let name = items[1]
-                                .as_atom()
-                                .ok_or("define-foreign name must be an atom")?
-                                .to_string();
-                            let idx = n_foreign;
-                            n_foreign += 1;
-                            defs.push(Define { name, body: Expr::Foreign(idx) });
                         }
                         _ => return Err(format!("unexpected top-level form: {}", head)),
                     }
