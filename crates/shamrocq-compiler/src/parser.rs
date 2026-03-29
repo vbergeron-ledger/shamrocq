@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_fourchette_negb() {
+    fn parse_hash_forest_negb() {
         let src = r#"(define negb (lambda (b) (match b
                             ((True) `(False))
                             ((False) `(True)))))"#;

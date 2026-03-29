@@ -467,8 +467,8 @@ mod tests {
     }
 
     #[test]
-    fn resolve_full_fourchette() {
-        let src = std::fs::read_to_string("../../scheme/fourchette.scm").unwrap();
+    fn resolve_full_hash_forest() {
+        let src = std::fs::read_to_string("../../scheme/hash_forest.scm").unwrap();
         let sexps = parse(&src).unwrap();
         let defs = desugar_program(&sexps).unwrap();
         let mut tags = TagTable::new();

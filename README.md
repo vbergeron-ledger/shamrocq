@@ -131,7 +131,7 @@ Compiled sizes (release, `thumbv7em-none-eabihf`):
 | Component | Size |
 |-----------|------|
 | VM runtime (`.text`) | ~12 KB |
-| Bytecode (`fourchette.scm`, 32 globals) | ~3 KB |
+| Bytecode (`hash_forest.scm`, 32 globals) | ~3 KB |
 | **Total flash** | **~15 KB** |
 
 ## Optional features

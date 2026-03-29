@@ -559,8 +559,8 @@ mod tests {
     }
 
     #[test]
-    fn compile_full_fourchette() {
-        let src = std::fs::read_to_string("../../scheme/fourchette.scm").unwrap();
+    fn compile_full_hash_forest() {
+        let src = std::fs::read_to_string("../../scheme/hash_forest.scm").unwrap();
         let prog = compile(&src);
         assert!(prog.header.n_globals > 20);
         assert!(prog.code.len() > 100);

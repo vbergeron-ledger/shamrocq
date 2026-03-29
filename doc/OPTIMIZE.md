@@ -210,7 +210,7 @@ Current:   Closure_A [hdr|c0|c1|c2] + Closure_B [hdr|c0|c1|c2]  = 8 words
 Shared:    Env [c0|c1|c2] + Closure_A [hdr|env] + Closure_B [hdr|env]  = 7 words
 ```
 
-In `fourchette.scm`, many functions create 2–4 lambdas that all capture `h`
+In `hash_forest.scm`, many functions create 2–4 lambdas that all capture `h`
 (the ordering function).  Savings scale with capture count × number of sibling
 closures.
 
