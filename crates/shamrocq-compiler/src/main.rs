@@ -15,6 +15,10 @@ struct Cli {
     #[arg(short, long, default_value = ".")]
     output: PathBuf,
 
+    /// Embed constructor tag names in the bytecode blob
+    #[arg(long)]
+    embed_tags: bool,
+
     /// Scheme source files to compile
     #[arg(required = true)]
     files: Vec<PathBuf>,
@@ -39,7 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rdefs =
         resolve_program(&defs, &mut tags, &mut globals).map_err(|e| format!("resolve: {}", e))?;
 
-    let prog = compile_program(&rdefs);
+    let mut prog = compile_program(&rdefs);
+    if cli.embed_tags {
+        prog.header.tags = tags.entries().into_iter().map(|(name, _)| name).collect();
+    }
     let blob = prog.serialize();
 
     std::fs::create_dir_all(&cli.output)?;

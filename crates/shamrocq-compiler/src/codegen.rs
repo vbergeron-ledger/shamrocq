@@ -172,6 +172,7 @@ pub fn compile_program(defs: &[RDefine]) -> CompiledProgram {
         header: ProgramHeader {
             n_globals: global_offsets.len() as u16,
             globals: global_offsets,
+            tags: Vec::new(),
         },
         code: c.emitter.code,
         foreign_fns,

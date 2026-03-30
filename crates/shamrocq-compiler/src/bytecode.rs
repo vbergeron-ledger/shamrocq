@@ -223,6 +223,8 @@ pub struct ProgramHeader {
     /// (name, code_offset) for each top-level define.
     /// The index in this vec is the global slot index.
     pub globals: Vec<(String, u16)>,
+    /// Constructor tag names, indexed by tag id. Empty if not embedded.
+    pub tags: Vec<String>,
 }
 
 impl ProgramHeader {
@@ -235,9 +237,17 @@ impl ProgramHeader {
             out.extend_from_slice(name_bytes);
             out.extend_from_slice(&offset.to_le_bytes());
         }
+        out.extend_from_slice(&(self.tags.len() as u16).to_le_bytes());
+        for name in &self.tags {
+            let name_bytes = name.as_bytes();
+            assert!(name_bytes.len() < 256);
+            out.push(name_bytes.len() as u8);
+            out.extend_from_slice(name_bytes);
+        }
     }
 
     pub fn serialized_len(&self) -> usize {
         2 + self.globals.iter().map(|(n, _)| 1 + n.len() + 2).sum::<usize>()
+          + 2 + self.tags.iter().map(|n| 1 + n.len()).sum::<usize>()
     }
 }

@@ -81,9 +81,22 @@ impl<'a> Program<'a> {
             let name_len = blob[pos] as usize;
             pos += 1 + name_len + 2;
         }
+        let globals_end = pos;
+        if pos + 2 > blob.len() {
+            return Err(VmError::InvalidBytecode);
+        }
+        let n_tags = u16::from_le_bytes([blob[pos], blob[pos + 1]]) as usize;
+        pos += 2;
+        for _ in 0..n_tags {
+            if pos >= blob.len() {
+                return Err(VmError::InvalidBytecode);
+            }
+            let name_len = blob[pos] as usize;
+            pos += 1 + name_len;
+        }
         Ok(Program {
             n_globals,
-            global_names: &blob[2..pos],
+            global_names: &blob[2..globals_end],
             code: &blob[pos..],
         })
     }
@@ -615,7 +628,6 @@ impl<'buf> Vm<'buf> {
                 op::TAIL_CALL_DIRECT => {
                     let code_addr = u16::from_le_bytes([code[pc], code[pc + 1]]);
                     let n_args = code[pc + 2] as usize;
-                    pc += 3;
                     stat!(self, exec_tail_direct_call_count += 1);
                     let mut args_buf: [Value; 16] = [Value::ctor(0, 0); 16];
                     for i in (0..n_args).rev() {
