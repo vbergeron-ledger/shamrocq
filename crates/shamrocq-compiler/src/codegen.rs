@@ -306,8 +306,8 @@ impl Compiler {
                 self.emit_captures(&free, ctx);
 
                 let n_captures = free.len() as u8;
-                self.emitter.emit_closure(0, n_captures);
-                let code_addr_pos = self.emitter.pos() - 3;
+                self.emitter.emit_closure(0, 1, n_captures);
+                let code_addr_pos = self.emitter.pos() - 4;
 
                 self.last_closure_captures = Some(free.clone());
 
@@ -416,7 +416,7 @@ impl Compiler {
             }
 
             RExpr::Foreign(idx) => {
-                self.emitter.emit_foreign_fn_const(*idx);
+                self.emitter.emit_foreign_fn_const(*idx, 1);
                 if tail {
                     self.emitter.emit_ret();
                 }

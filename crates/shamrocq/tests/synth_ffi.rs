@@ -116,10 +116,10 @@ fn foreign_fn_in_tail_position() {
 
 #[test]
 fn foreign_fn_called_via_apply() {
-    let ffn = Value::foreign_fn(0);
+    let ffn = Value::foreign_fn(0, 1);
     assert!(ffn.is_foreign_fn());
     assert!(ffn.is_callable());
-    assert_eq!(ffn.foreign_fn_idx(), 0);
+    assert_eq!(ffn.fn_addr(), 0);
 
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
@@ -153,7 +153,7 @@ fn foreign_fn_compiler_assigns_indices_in_order() {
     assert!(vm.global_value(0).is_foreign_fn());
     assert!(vm.global_value(1).is_foreign_fn());
     assert!(vm.global_value(2).is_foreign_fn());
-    assert_eq!(vm.global_value(0).foreign_fn_idx(), 0);
-    assert_eq!(vm.global_value(1).foreign_fn_idx(), 1);
-    assert_eq!(vm.global_value(2).foreign_fn_idx(), 2);
+    assert_eq!(vm.global_value(0).fn_addr(), 0);
+    assert_eq!(vm.global_value(1).fn_addr(), 1);
+    assert_eq!(vm.global_value(2).fn_addr(), 2);
 }

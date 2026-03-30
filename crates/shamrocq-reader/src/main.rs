@@ -111,6 +111,7 @@ struct Global {
 struct ClosureRef {
     pc: usize,
     target: u16,
+    arity: u8,
     n_captures: u8,
 }
 
@@ -218,9 +219,10 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
             op::GLOBAL => { pc += 2; }
             op::CLOSURE => {
                 let target = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                let n_captures = code[pc + 2];
-                pc += 3;
-                closures.push(ClosureRef { pc: instr_pc, target, n_captures });
+                let arity = code[pc + 2];
+                let n_captures = code[pc + 3];
+                pc += 4;
+                closures.push(ClosureRef { pc: instr_pc, target, arity, n_captures });
             }
             op::CALL => {}
             op::TAIL_CALL => {
@@ -264,7 +266,7 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
                 call_direct_targets.insert(target);
                 if pc < code.len() { after_term.push(pc as u16); }
             }
-            op::FOREIGN_FN_CONST => { pc += 2; }
+            op::FOREIGN_FN_CONST => { pc += 3; }
             op::LOAD_CAPTURE => { pc += 1; }
             other => {
                 return Err(format!(
@@ -484,7 +486,7 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
             let (addr, name) = sorted_labels[next_label];
             println!();
             let comment = match frames.get(&addr) {
-                Some(fi) if fi.n_captures == 0 && fi.n_params == 1 => "bare_fn".to_string(),
+                Some(fi) if fi.n_captures == 0 && fi.n_params == 1 => "function".to_string(),
                 Some(fi) if fi.n_captures > 0 && fi.n_params == 1 => {
                     format!("{} capture{}", fi.n_captures, if fi.n_captures > 1 { "s" } else { "" })
                 }
@@ -620,13 +622,14 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
             }
             op::CLOSURE => {
                 let code_addr = read_u16le(code, pc)?;
-                let n_cap = read_u8(code, pc + 2)?;
-                pc += 3;
+                let arity = read_u8(code, pc + 2)?;
+                let n_cap = read_u8(code, pc + 3)?;
+                pc += 4;
                 let lbl = fmt_label(code_addr, &labels, c);
                 if n_cap == 0 {
-                    instr!(instr_pc, "CLOSURE", "bare_fn code+0x{:04X}{}", code_addr, lbl);
+                    instr!(instr_pc, "CLOSURE", "fn code+0x{:04X}{} arity={}", code_addr, lbl, arity);
                 } else {
-                    instr!(instr_pc, "CLOSURE", "code+0x{:04X}{} captures={}", code_addr, lbl, n_cap);
+                    instr!(instr_pc, "CLOSURE", "code+0x{:04X}{} arity={} captures={}", code_addr, lbl, arity, n_cap);
                 }
             }
             op::CALL => {
@@ -740,8 +743,9 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
             }
             op::FOREIGN_FN_CONST => {
                 let idx = read_u16le(code, pc)?;
-                pc += 2;
-                instr!(instr_pc, "FOREIGN_FN_CONST", "idx={}", idx);
+                let arity = read_u8(code, pc + 2)?;
+                pc += 3;
+                instr!(instr_pc, "FOREIGN_FN_CONST", "idx={} arity={}", idx, arity);
             }
             other => {
                 return Err(format!(

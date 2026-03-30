@@ -244,13 +244,13 @@ impl<'buf> Vm<'buf> {
                 return Err(VmError::NotAClosure);
             }
             if func.is_foreign_fn() {
-                let f = self.foreign_fns[func.foreign_fn_idx() as usize]
+                let f = self.foreign_fns[func.fn_addr() as usize]
                     .ok_or(VmError::InvalidBytecode)?;
                 func = f(self, arg)?;
             } else {
                 let saved_pos = self.arena.stack_bot_pos();
-                let (code_addr, env) = if func.is_bare_fn() {
-                    (func.code_addr(), Value::ctor(0, 0))
+                let (code_addr, env) = if func.is_function() {
+                    (func.fn_addr(), Value::ctor(0, 0))
                 } else {
                     (self.arena.closure_code(func), func)
                 };
@@ -382,13 +382,14 @@ impl<'buf> Vm<'buf> {
 
                 op::CLOSURE => {
                     let code_addr = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                    let n_cap = code[pc + 2] as usize;
-                    pc += 3;
+                    let arity = code[pc + 2];
+                    let n_cap = code[pc + 3] as usize;
+                    pc += 4;
                     if n_cap == 0 {
-                        self.arena.stack_push(Value::bare_fn(code_addr))?;
+                        self.arena.stack_push(Value::function(code_addr, arity))?;
                         self.record_stack();
                     } else {
-                        let val = self.arena.alloc_closure_from_stack(code_addr, n_cap)?;
+                        let val = self.arena.alloc_closure_from_stack(code_addr, arity, n_cap)?;
                         stat!(self, alloc_count_closure += 1);
                         stat!(self, alloc_bytes_total += ((1 + n_cap) * 4) as u32);
                         self.record_heap();
@@ -404,7 +405,7 @@ impl<'buf> Vm<'buf> {
                         return Err(VmError::NotAClosure);
                     }
                     if func.is_foreign_fn() {
-                        let f = self.foreign_fns[func.foreign_fn_idx() as usize]
+                        let f = self.foreign_fns[func.fn_addr() as usize]
                             .ok_or(VmError::InvalidBytecode)?;
                         let result = f(self, arg)?;
                         self.arena.stack_push(result)?;
@@ -422,9 +423,9 @@ impl<'buf> Vm<'buf> {
                         stat!(self, exec_peak_call_depth = max call_depth as u32);
 
                         frame_base = self.arena.stack_bot_pos();
-                        let ca = if func.is_bare_fn() {
+                        let ca = if func.is_function() {
                             env = Value::ctor(0, 0);
-                            func.code_addr()
+                            func.fn_addr()
                         } else {
                             env = func;
                             self.arena.closure_code(func)
@@ -442,7 +443,7 @@ impl<'buf> Vm<'buf> {
                         return Err(VmError::NotAClosure);
                     }
                     if func.is_foreign_fn() {
-                        let f = self.foreign_fns[func.foreign_fn_idx() as usize]
+                        let f = self.foreign_fns[func.fn_addr() as usize]
                             .ok_or(VmError::InvalidBytecode)?;
                         let result = f(self, arg)?;
                         self.arena.set_stack_bot_pos(frame_base);
@@ -458,9 +459,9 @@ impl<'buf> Vm<'buf> {
                         self.arena.set_stack_bot_pos(frame_base);
                         stat!(self, exec_tail_call_count += 1);
 
-                        let ca = if func.is_bare_fn() {
+                        let ca = if func.is_function() {
                             env = Value::ctor(0, 0);
-                            func.code_addr()
+                            func.fn_addr()
                         } else {
                             env = func;
                             self.arena.closure_code(func)
@@ -706,8 +707,9 @@ impl<'buf> Vm<'buf> {
 
                 op::FOREIGN_FN_CONST => {
                     let idx = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                    pc += 2;
-                    self.arena.stack_push(Value::foreign_fn(idx))?;
+                    let arity = code[pc + 2];
+                    pc += 3;
+                    self.arena.stack_push(Value::foreign_fn(idx, arity))?;
                 }
 
                 _ => return Err(VmError::InvalidBytecode),

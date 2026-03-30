@@ -40,6 +40,8 @@ impl<'a> Arena<'a> {
         Ok(base)
     }
 
+    // -- Ctor --
+
     pub fn alloc_ctor(&mut self, tag: u8, fields: &[Value]) -> Result<Value, ArenaError> {
         let offset = self.alloc(fields.len())?;
         for (i, &f) in fields.iter().enumerate() {
@@ -48,8 +50,6 @@ impl<'a> Arena<'a> {
         Ok(Value::ctor(tag, offset))
     }
 
-    /// Allocate a constructor by popping `arity` values from the arena stack.
-    /// Fields are expected on the stack in order (first field deepest, last on top).
     pub fn alloc_ctor_from_stack(&mut self, tag: u8, arity: usize) -> Result<Value, ArenaError> {
         let offset = self.alloc(arity)?;
         for i in (0..arity).rev() {
@@ -59,29 +59,38 @@ impl<'a> Arena<'a> {
         Ok(Value::ctor(tag, offset))
     }
 
+    pub fn ctor_field(&self, val: Value, idx: usize) -> Value {
+        let base = val.offset();
+        Value::from_raw(self.read_word(base + idx * 4))
+    }
+
+    // -- Closure: header = [code_addr:16 | arity:8 | n_cap:8] --
+
     pub fn alloc_closure(
         &mut self,
         code_addr: u16,
+        arity: u8,
         captures: &[Value],
     ) -> Result<Value, ArenaError> {
         let n = captures.len();
         let offset = self.alloc(1 + n)?;
-        self.write_word(offset, ((code_addr as u32) << 16) | (n as u32));
+        let header = ((code_addr as u32) << 16) | ((arity as u32) << 8) | (n as u32);
+        self.write_word(offset, header);
         for (i, &c) in captures.iter().enumerate() {
             self.write_word(offset + (1 + i) * 4, c.raw());
         }
         Ok(Value::closure(offset))
     }
 
-    /// Allocate a closure by popping `n_cap` capture values from the arena stack.
-    /// Captures are expected on the stack in order (first capture deepest, last on top).
     pub fn alloc_closure_from_stack(
         &mut self,
         code_addr: u16,
+        arity: u8,
         n_cap: usize,
     ) -> Result<Value, ArenaError> {
         let offset = self.alloc(1 + n_cap)?;
-        self.write_word(offset, ((code_addr as u32) << 16) | (n_cap as u32));
+        let header = ((code_addr as u32) << 16) | ((arity as u32) << 8) | (n_cap as u32);
+        self.write_word(offset, header);
         for i in (0..n_cap).rev() {
             let cap = self.stack_pop();
             self.write_word(offset + (1 + i) * 4, cap.raw());
@@ -89,19 +98,19 @@ impl<'a> Arena<'a> {
         Ok(Value::closure(offset))
     }
 
-    pub fn ctor_field(&self, val: Value, idx: usize) -> Value {
-        let base = val.offset();
-        Value::from_raw(self.read_word(base + idx * 4))
-    }
-
     pub fn closure_code(&self, val: Value) -> u16 {
         let header = self.read_word(val.closure_offset());
         (header >> 16) as u16
     }
 
+    pub fn closure_arity(&self, val: Value) -> u8 {
+        let header = self.read_word(val.closure_offset());
+        ((header >> 8) & 0xFF) as u8
+    }
+
     pub fn closure_capture_count(&self, val: Value) -> usize {
         let header = self.read_word(val.closure_offset());
-        (header & 0xFFFF) as usize
+        (header & 0xFF) as usize
     }
 
     pub fn closure_capture(&self, val: Value, idx: usize) -> Value {
@@ -113,6 +122,53 @@ impl<'a> Arena<'a> {
         let base = closure.closure_offset();
         self.write_word(base + (1 + idx) * 4, val.raw());
     }
+
+    // -- Application: header = [arity:4 | applied:4 | callee_kind:3 | callee_payload:21] --
+
+    pub fn alloc_application(
+        &mut self,
+        callee: Value,
+        arity: u8,
+        args: &[Value],
+    ) -> Result<Value, ArenaError> {
+        let applied = args.len();
+        let offset = self.alloc(1 + applied)?;
+        let callee_bits = callee.raw() & 0x00FF_FFFF; // kind:3 + payload:21 from lower 24 bits
+        let header = ((arity as u32 & 0xF) << 28)
+            | ((applied as u32 & 0xF) << 24)
+            | callee_bits;
+        self.write_word(offset, header);
+        for (i, &a) in args.iter().enumerate() {
+            self.write_word(offset + (1 + i) * 4, a.raw());
+        }
+        Ok(Value::application(offset))
+    }
+
+    pub fn application_arity(&self, val: Value) -> u8 {
+        let header = self.read_word(val.application_offset());
+        ((header >> 28) & 0xF) as u8
+    }
+
+    pub fn application_applied(&self, val: Value) -> u8 {
+        let header = self.read_word(val.application_offset());
+        ((header >> 24) & 0xF) as u8
+    }
+
+    pub fn application_callee(&self, val: Value) -> Value {
+        let header = self.read_word(val.application_offset());
+        let callee_bits = header & 0x00FF_FFFF;
+        // Reconstruct the callee Value: kind bits are in 23:21, shift to 31:29
+        let kind = (callee_bits >> 21) & 0x7;
+        let payload = callee_bits & PAYLOAD_21_RAW;
+        Value::from_raw((kind << 29) | payload)
+    }
+
+    pub fn application_arg(&self, val: Value, idx: usize) -> Value {
+        let base = val.application_offset();
+        Value::from_raw(self.read_word(base + (1 + idx) * 4))
+    }
+
+    // -- Bytes --
 
     pub fn alloc_bytes(&mut self, data: &[u8]) -> Result<Value, ArenaError> {
         let len = data.len();
@@ -213,3 +269,5 @@ impl<'a> Arena<'a> {
         self.stack_bot - self.heap_top
     }
 }
+
+const PAYLOAD_21_RAW: u32 = 0x001F_FFFF;

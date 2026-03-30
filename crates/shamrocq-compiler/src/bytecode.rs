@@ -48,7 +48,7 @@ pub mod op {
 ///   UNPACK    n:u8
 ///   LOAD      idx:u8
 ///   GLOBAL    idx:u16le
-///   CLOSURE   code_addr:u16le  n_captures:u8
+///   CLOSURE   code_addr:u16le  arity:u8  n_captures:u8
 ///   CALL
 ///   TAIL_CALL
 ///   RET
@@ -59,7 +59,7 @@ pub mod op {
 ///   ERROR
 ///   CALL_DIRECT       code_addr:u16le  n_args:u8
 ///   TAIL_CALL_DIRECT  code_addr:u16le  n_args:u8
-///   FOREIGN_FN_CONST  idx:u16le
+///   FOREIGN_FN_CONST  idx:u16le  arity:u8
 ///   LOAD_CAPTURE      idx:u8
 ///   LOAD2             idx_a:u8  idx_b:u8
 ///   LOAD3             idx_a:u8  idx_b:u8  idx_c:u8
@@ -130,10 +130,11 @@ impl Emitter {
         self.code.extend_from_slice(&idx.to_le_bytes());
     }
 
-    pub fn emit_closure(&mut self, code_addr: u16, n_captures: u8) {
+    pub fn emit_closure(&mut self, code_addr: u16, arity: u8, n_captures: u8) {
         self.flush_pending_loads();
         self.code.push(op::CLOSURE);
         self.code.extend_from_slice(&code_addr.to_le_bytes());
+        self.code.push(arity);
         self.code.push(n_captures);
     }
 
@@ -263,10 +264,11 @@ impl Emitter {
         self.code.push(n_args);
     }
 
-    pub fn emit_foreign_fn_const(&mut self, idx: u16) {
+    pub fn emit_foreign_fn_const(&mut self, idx: u16, arity: u8) {
         self.flush_pending_loads();
         self.code.push(op::FOREIGN_FN_CONST);
         self.code.extend_from_slice(&idx.to_le_bytes());
+        self.code.push(arity);
     }
 
     pub fn emit_load_capture(&mut self, idx: u8) {
