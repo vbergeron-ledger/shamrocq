@@ -25,4 +25,4 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Test all crates
-        run: cargo test --workspace --features integration
+        run: cargo test --workspace
