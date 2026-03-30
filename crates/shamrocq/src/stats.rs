@@ -13,8 +13,6 @@ pub struct Stats {
     pub exec_instruction_count: u64,
     pub exec_call_count: u32,
     pub exec_tail_call_count: u32,
-    pub exec_direct_call_count: u32,
-    pub exec_tail_direct_call_count: u32,
     pub exec_match_count: u32,
     pub exec_peak_call_depth: u32,
 }
@@ -33,8 +31,6 @@ impl fmt::Display for Stats {
         writeln!(f, "    instructions   {:>6}", self.exec_instruction_count)?;
         writeln!(f, "    calls          {:>6}", self.exec_call_count)?;
         writeln!(f, "    tail calls     {:>6}", self.exec_tail_call_count)?;
-        writeln!(f, "    direct calls   {:>6}", self.exec_direct_call_count)?;
-        writeln!(f, "    tail directs   {:>6}", self.exec_tail_direct_call_count)?;
         writeln!(f, "    matches        {:>6}", self.exec_match_count)?;
         write!(f,   "    peak depth     {:>6}", self.exec_peak_call_depth)
     }

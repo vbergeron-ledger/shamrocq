@@ -8,4 +8,5 @@ name = "shamrocq-reader"
 path = "src/main.rs"
 
 [dependencies]
+shamrocq-bytecode = { path = "../shamrocq-bytecode" }
 clap = { version = "4.6.0", features = ["derive"] }

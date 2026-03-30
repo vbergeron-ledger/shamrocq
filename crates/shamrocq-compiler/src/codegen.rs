@@ -81,8 +81,6 @@ struct Compiler {
     emitter: Emitter,
     deferred: Vec<DeferredLambda>,
     last_closure_captures: Option<Vec<u8>>,
-    arities: Vec<u8>,
-    flat_patches: Vec<(u16, usize)>,
 }
 
 enum LoadTarget {
@@ -121,13 +119,6 @@ impl Ctx {
         }
     }
 
-    fn for_direct_call(arity: usize) -> Self {
-        Ctx {
-            captures: Vec::new(),
-            frame_depth: arity,
-        }
-    }
-
     fn load_target(&self, de_bruijn: u8) -> LoadTarget {
         let idx = de_bruijn as usize;
         if idx < self.frame_depth {
@@ -158,14 +149,10 @@ impl Ctx {
 }
 
 pub fn compile_program(defs: &[RDefine]) -> CompiledProgram {
-    let arities: Vec<u8> = defs.iter().map(|d| lambda_arity(&d.body)).collect();
-
     let mut c = Compiler {
         emitter: Emitter::new(),
         deferred: Vec::new(),
         last_closure_captures: None,
-        arities,
-        flat_patches: Vec::new(),
     };
 
     let mut global_offsets: Vec<(String, u16)> = Vec::new();
@@ -178,25 +165,6 @@ pub fn compile_program(defs: &[RDefine]) -> CompiledProgram {
     }
 
     c.emit_deferred();
-
-    let mut flat_addrs: Vec<Option<u16>> = vec![None; defs.len()];
-    for (i, def) in defs.iter().enumerate() {
-        if c.arities[i] > 1 {
-            let addr = c.emitter.pos() as u16;
-            flat_addrs[i] = Some(addr);
-            let body = innermost_body(&def.body);
-            let mut ctx = Ctx::for_direct_call(c.arities[i] as usize);
-            c.compile_expr(body, &mut ctx, true);
-        }
-    }
-
-    c.emit_deferred();
-
-    for &(global_idx, patch_pos) in &c.flat_patches {
-        let addr = flat_addrs[global_idx as usize]
-            .expect("BUG: CALL_DIRECT for global without flat body");
-        c.emitter.patch_u16(patch_pos, addr);
-    }
 
     let foreign_fns: Vec<(String, u16)> = defs
         .iter()
@@ -221,46 +189,7 @@ pub fn compile_program(defs: &[RDefine]) -> CompiledProgram {
 }
 
 impl Compiler {
-    fn try_unfold_known_call<'a>(&self, expr: &'a RExpr) -> Option<(u16, Vec<&'a RExpr>)> {
-        let mut args = Vec::new();
-        let mut cur = expr;
-        loop {
-            match cur {
-                RExpr::App(f, a) => {
-                    args.push(a.as_ref());
-                    cur = f.as_ref();
-                }
-                RExpr::Global(idx) => {
-                    let arity = self.arities[*idx as usize];
-                    if arity > 1 && args.len() == arity as usize {
-                        args.reverse();
-                        return Some((*idx, args));
-                    }
-                    return None;
-                }
-                _ => return None,
-            }
-        }
-    }
-
     fn compile_expr(&mut self, expr: &RExpr, ctx: &mut Ctx, tail: bool) {
-        if let RExpr::App(_, _) = expr {
-            if let Some((global_idx, args)) = self.try_unfold_known_call(expr) {
-                for arg in &args {
-                    self.compile_expr(arg, ctx, false);
-                }
-                let n_args = args.len() as u8;
-                if tail {
-                    self.emitter.emit_tail_call_direct(0, n_args);
-                } else {
-                    self.emitter.emit_call_direct(0, n_args);
-                }
-                let patch_pos = self.emitter.pos() - 3;
-                self.flat_patches.push((global_idx, patch_pos));
-                return;
-            }
-        }
-
         match expr {
             RExpr::Local(idx) => {
                 match ctx.load_target(*idx) {
@@ -499,20 +428,6 @@ impl Compiler {
     }
 }
 
-fn lambda_arity(expr: &RExpr) -> u8 {
-    match expr {
-        RExpr::Lambda(body) => 1 + lambda_arity(body),
-        _ => 0,
-    }
-}
-
-fn innermost_body(expr: &RExpr) -> &RExpr {
-    match expr {
-        RExpr::Lambda(body) => innermost_body(body),
-        other => other,
-    }
-}
-
 /// Collect de Bruijn indices that are free in `expr` (>= `bound`),
 /// normalized to the enclosing scope (shifted down by `bound`).
 fn collect_free(expr: &RExpr, bound: usize, free: &mut Vec<u8>) {
@@ -621,21 +536,6 @@ mod tests {
         assert!(prog.code.len() > 100);
         let blob = prog.serialize();
         assert!(blob.len() > prog.code.len());
-    }
-
-    #[test]
-    fn compile_known_call_emits_call_direct() {
-        use crate::bytecode::op;
-        let prog = compile(
-            "(define f (lambdas (a b) (+ a b)))\n\
-             (define g (lambda (x) (@ f x 1)))",
-        );
-        let has_direct = prog.code.iter()
-            .any(|&b| b == op::CALL_DIRECT || b == op::TAIL_CALL_DIRECT);
-        assert!(has_direct, "expected CALL_DIRECT or TAIL_CALL_DIRECT in bytecode");
-        let has_call = prog.code.iter()
-            .any(|&b| b == op::CALL || b == op::TAIL_CALL);
-        assert!(!has_call, "unexpected CALL — known call should bypass it");
     }
 
     #[test]

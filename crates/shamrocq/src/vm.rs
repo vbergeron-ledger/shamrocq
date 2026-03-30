@@ -4,56 +4,11 @@ use crate::stats::stat;
 use crate::stats::Stats;
 use crate::stats::MemSnapshot;
 use crate::value::Value;
+use shamrocq_bytecode::op;
+use shamrocq_bytecode::{MAGIC, BYTECODE_VERSION};
 
-mod op {
-    // Stack / locals
-    pub const LOAD: u8 = 0x01;
-    pub const LOAD2: u8 = 0x02;
-    pub const LOAD3: u8 = 0x03;
-    pub const LOAD_CAPTURE: u8 = 0x04;
-    pub const GLOBAL: u8 = 0x05;
-    pub const DROP: u8 = 0x06;
-    pub const SLIDE: u8 = 0x07;
-
-    // Data
-    pub const PACK: u8 = 0x08;
-    pub const UNPACK: u8 = 0x09;
-    pub const BIND: u8 = 0x0A;
-    pub const FUNCTION: u8 = 0x0B;
-    pub const CLOSURE: u8 = 0x0C;
-    pub const FIXPOINT: u8 = 0x0D;
-
-    // Control flow
-    pub const CALL: u8 = 0x0E;
-    pub const TAIL_CALL: u8 = 0x0F;
-    pub const CALL_DIRECT: u8 = 0x10;
-    pub const TAIL_CALL_DIRECT: u8 = 0x11;
-    pub const RET: u8 = 0x12;
-    pub const MATCH: u8 = 0x13;
-    pub const JMP: u8 = 0x14;
-    pub const ERROR: u8 = 0x15;
-
-    // Integer
-    pub const INT: u8 = 0x16;
-    pub const ADD: u8 = 0x17;
-    pub const SUB: u8 = 0x18;
-    pub const MUL: u8 = 0x19;
-    pub const DIV: u8 = 0x1A;
-    pub const NEG: u8 = 0x1B;
-    pub const EQ: u8 = 0x1C;
-    pub const LT: u8 = 0x1D;
-
-    // Bytes
-    pub const BYTES: u8 = 0x1E;
-    pub const BYTES_LEN: u8 = 0x1F;
-    pub const BYTES_GET: u8 = 0x20;
-    pub const BYTES_EQ: u8 = 0x21;
-    pub const BYTES_CONCAT: u8 = 0x22;
-}
-
-const MAGIC: [u8; 4] = *b"SMRQ";
-const MIN_BYTECODE_VERSION: u16 = 2;
-const MAX_BYTECODE_VERSION: u16 = 2;
+const MIN_BYTECODE_VERSION: u16 = BYTECODE_VERSION;
+const MAX_BYTECODE_VERSION: u16 = BYTECODE_VERSION;
 
 #[derive(Debug)]
 pub enum VmError {
@@ -810,44 +765,6 @@ impl<'buf> Vm<'buf> {
                     self.record_heap();
                     self.arena.stack_push(val)?;
                     self.record_stack();
-                }
-
-                op::CALL_DIRECT => {
-                    let code_addr = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                    let n_args = code[pc + 2] as usize;
-                    pc += 3;
-                    if call_depth >= MAX_CALL_DEPTH {
-                        return Err(VmError::StackOverflow);
-                    }
-                    self.call_stack[call_depth] = CallFrame {
-                        return_pc: pc,
-                        frame_base,
-                        env,
-                    };
-                    call_depth += 1;
-                    stat!(self, exec_direct_call_count += 1);
-                    stat!(self, exec_peak_call_depth = max call_depth as u32);
-                    frame_base = self.arena.stack_bot_pos() + n_args * 4;
-                    env = Value::ctor(0, 0);
-                    pc = code_addr as usize;
-                }
-
-                op::TAIL_CALL_DIRECT => {
-                    let code_addr = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                    let n_args = code[pc + 2] as usize;
-                    stat!(self, exec_tail_direct_call_count += 1);
-                    let mut args_buf: [Value; 16] = [Value::ctor(0, 0); 16];
-                    for i in (0..n_args).rev() {
-                        args_buf[i] = self.arena.stack_pop();
-                    }
-                    self.arena.set_stack_bot_pos(frame_base);
-                    for i in 0..n_args {
-                        self.arena.stack_write_at(frame_base - (i + 1) * 4, args_buf[i]);
-                    }
-                    self.arena.set_stack_bot_pos(frame_base - n_args * 4);
-                    self.record_stack();
-                    env = Value::ctor(0, 0);
-                    pc = code_addr as usize;
                 }
 
                 op::FUNCTION => {

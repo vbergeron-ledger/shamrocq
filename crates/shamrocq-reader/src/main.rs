@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
@@ -62,53 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// ── opcodes ──────────────────────────────────────────────────────────────────
-
-mod op {
-    // Stack / locals
-    pub const LOAD: u8 = 0x01;
-    pub const LOAD2: u8 = 0x02;
-    pub const LOAD3: u8 = 0x03;
-    pub const LOAD_CAPTURE: u8 = 0x04;
-    pub const GLOBAL: u8 = 0x05;
-    pub const DROP: u8 = 0x06;
-    pub const SLIDE: u8 = 0x07;
-
-    // Data
-    pub const PACK: u8 = 0x08;
-    pub const UNPACK: u8 = 0x09;
-    pub const BIND: u8 = 0x0A;
-    pub const FUNCTION: u8 = 0x0B;
-    pub const CLOSURE: u8 = 0x0C;
-    pub const FIXPOINT: u8 = 0x0D;
-
-    // Control flow
-    pub const CALL: u8 = 0x0E;
-    pub const TAIL_CALL: u8 = 0x0F;
-    pub const CALL_DIRECT: u8 = 0x10;
-    pub const TAIL_CALL_DIRECT: u8 = 0x11;
-    pub const RET: u8 = 0x12;
-    pub const MATCH: u8 = 0x13;
-    pub const JMP: u8 = 0x14;
-    pub const ERROR: u8 = 0x15;
-
-    // Integer
-    pub const INT: u8 = 0x16;
-    pub const ADD: u8 = 0x17;
-    pub const SUB: u8 = 0x18;
-    pub const MUL: u8 = 0x19;
-    pub const DIV: u8 = 0x1A;
-    pub const NEG: u8 = 0x1B;
-    pub const EQ: u8 = 0x1C;
-    pub const LT: u8 = 0x1D;
-
-    // Bytes
-    pub const BYTES: u8 = 0x1E;
-    pub const BYTES_LEN: u8 = 0x1F;
-    pub const BYTES_GET: u8 = 0x20;
-    pub const BYTES_EQ: u8 = 0x21;
-    pub const BYTES_CONCAT: u8 = 0x22;
-}
+use shamrocq_bytecode::op;
 
 // ── data types ───────────────────────────────────────────────────────────────
 
@@ -131,9 +85,6 @@ struct FrameInfo {
 
 struct ScanResult {
     closures: Vec<ClosureRef>,
-    call_direct_targets: HashSet<u16>,
-    match_targets: HashSet<u16>,
-    after_term: Vec<u16>,
 }
 
 // ── header parsing ────────────────────────────────────────────────────────────
@@ -142,7 +93,7 @@ fn parse_header(blob: &[u8]) -> Result<(u16, Vec<Global>, Vec<String>, usize), S
     if blob.len() < 8 {
         return Err("blob too short for header".to_string());
     }
-    if &blob[0..4] != b"SMRQ" {
+    if blob[0..4] != shamrocq_bytecode::MAGIC {
         return Err("bad magic: expected SMRQ header".to_string());
     }
     let version = read_u16le(blob, 4)?;
@@ -209,9 +160,6 @@ fn try_parse_tags(blob: &[u8], start: usize) -> (Vec<String>, usize) {
 
 fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
     let mut closures = Vec::new();
-    let mut call_direct_targets = HashSet::new();
-    let mut match_targets = HashSet::new();
-    let mut after_term = Vec::new();
 
     let mut pc = 0usize;
     while pc < code.len() {
@@ -240,36 +188,15 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
             }
             op::FIXPOINT => { pc += 1; }
             op::CALL => {}
-            op::TAIL_CALL => {
-                if pc < code.len() { after_term.push(pc as u16); }
-            }
-            op::CALL_DIRECT => {
-                let target = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                pc += 3;
-                call_direct_targets.insert(target);
-            }
-            op::TAIL_CALL_DIRECT => {
-                let target = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                pc += 3;
-                call_direct_targets.insert(target);
-                if pc < code.len() { after_term.push(pc as u16); }
-            }
-            op::RET => {
-                if pc < code.len() { after_term.push(pc as u16); }
-            }
+            op::TAIL_CALL => {}
+            op::RET => {}
             op::MATCH => {
                 let n_cases = code[pc] as usize;
                 pc += 1;
-                for _ in 0..n_cases {
-                    let target = u16::from_le_bytes([code[pc + 2], code[pc + 3]]);
-                    pc += 4;
-                    match_targets.insert(target);
-                }
+                pc += n_cases * 4;
             }
             op::JMP => { pc += 2; }
-            op::ERROR => {
-                if pc < code.len() { after_term.push(pc as u16); }
-            }
+            op::ERROR => {}
             op::INT => { pc += 4; }
             op::ADD | op::SUB | op::MUL | op::DIV | op::NEG | op::EQ | op::LT => {}
             op::BYTES => {
@@ -286,7 +213,7 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
         }
     }
 
-    Ok(ScanResult { closures, call_direct_targets, match_targets, after_term })
+    Ok(ScanResult { closures })
 }
 
 // ── label building ───────────────────────────────────────────────────────────
@@ -297,7 +224,6 @@ fn build_labels(
 ) -> (HashMap<u16, String>, HashMap<u16, FrameInfo>) {
     let mut labels: HashMap<u16, String> = HashMap::new();
     let mut frames: HashMap<u16, FrameInfo> = HashMap::new();
-    let closure_targets: HashSet<u16> = scan.closures.iter().map(|c| c.target).collect();
 
     for g in globals {
         labels.insert(g.offset, g.name.clone());
@@ -309,100 +235,6 @@ fn build_labels(
 
     let mut child_counts: HashMap<u16, usize> = HashMap::new();
 
-    for cl in &sorted_closures {
-        if labels.contains_key(&cl.target) {
-            continue;
-        }
-        let parent = labels
-            .iter()
-            .filter(|(&addr, _)| (addr as usize) <= cl.pc)
-            .max_by_key(|(&addr, _)| addr);
-
-        if let Some((&parent_addr, parent_label)) = parent {
-            let n = child_counts.entry(parent_addr).or_insert(0);
-            let child_label = format!("{}/{}", parent_label, n);
-            *n += 1;
-            frames.insert(
-                cl.target,
-                FrameInfo { n_captures: cl.n_captures as usize, n_params: 1 },
-            );
-            labels.insert(cl.target, child_label);
-        }
-    }
-
-    // Detect multi-arity globals by following CLOSURE chains from each stub.
-    let sorted_addrs = {
-        let mut v: Vec<u16> = labels.keys().copied().collect();
-        v.sort();
-        v
-    };
-
-    let range_end = |addr: u16| -> u16 {
-        sorted_addrs
-            .iter()
-            .find(|&&a| a > addr)
-            .copied()
-            .unwrap_or(u16::MAX)
-    };
-
-    let mut multi_arity: Vec<(usize, String, u8)> = Vec::new();
-    for (gi, g) in globals.iter().enumerate() {
-        let mut arity = 0u8;
-        let mut current = g.offset;
-        loop {
-            let end = range_end(current);
-            let cl = scan
-                .closures
-                .iter()
-                .find(|c| c.pc as u16 >= current && (c.pc as u16) < end);
-            match cl {
-                Some(c) => {
-                    arity += 1;
-                    current = c.target;
-                }
-                None => break,
-            }
-        }
-        if arity > 1 {
-            multi_arity.push((gi, g.name.clone(), arity));
-        }
-    }
-
-    // Find flat body entry points: CALL_DIRECT targets not already labeled,
-    // plus unreferenced blocks after terminators.
-    let mut flat_candidates: Vec<u16> = Vec::new();
-
-    for &addr in &scan.call_direct_targets {
-        if !labels.contains_key(&addr) {
-            flat_candidates.push(addr);
-        }
-    }
-
-    for &addr in &scan.after_term {
-        if !labels.contains_key(&addr)
-            && !closure_targets.contains(&addr)
-            && !scan.match_targets.contains(&addr)
-            && !scan.call_direct_targets.contains(&addr)
-        {
-            flat_candidates.push(addr);
-        }
-    }
-
-    flat_candidates.sort();
-    flat_candidates.dedup();
-
-    for (i, &addr) in flat_candidates.iter().enumerate() {
-        if i < multi_arity.len() {
-            let (_, ref name, arity) = multi_arity[i];
-            labels.insert(addr, format!("{}/direct", name));
-            frames.insert(
-                addr,
-                FrameInfo { n_captures: 0, n_params: arity as usize },
-            );
-        }
-    }
-
-    // Label any CLOSUREs within flat bodies (same sequential approach).
     for cl in &sorted_closures {
         if labels.contains_key(&cl.target) {
             continue;
@@ -679,20 +511,6 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
             }
             op::TAIL_CALL => {
                 instr!(instr_pc, "TAIL_CALL");
-            }
-            op::CALL_DIRECT => {
-                let code_addr = read_u16le(code, pc)?;
-                let n_args = read_u8(code, pc + 2)?;
-                pc += 3;
-                let lbl = fmt_label(code_addr, &labels, c);
-                instr!(instr_pc, "CALL_DIRECT", "code+0x{:04X}{} args={}", code_addr, lbl, n_args);
-            }
-            op::TAIL_CALL_DIRECT => {
-                let code_addr = read_u16le(code, pc)?;
-                let n_args = read_u8(code, pc + 2)?;
-                pc += 3;
-                let lbl = fmt_label(code_addr, &labels, c);
-                instr!(instr_pc, "TAIL_CALL_DIRECT", "code+0x{:04X}{} args={}", code_addr, lbl, n_args);
             }
             op::RET => {
                 instr!(instr_pc, "RET");
