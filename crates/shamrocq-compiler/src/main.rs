@@ -14,6 +14,10 @@ struct Cli {
     #[arg(long)]
     embed_tags: bool,
 
+    /// Maximum number of optimization pass iterations (0 = no optimization)
+    #[arg(long, default_value_t = shamrocq_compiler::DEFAULT_MAX_PASS_ITERATIONS)]
+    max_pass_iterations: usize,
+
     /// Scheme source files to compile
     #[arg(required = true)]
     files: Vec<PathBuf>,
@@ -32,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Result<_, _>>()?;
     let refs: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
 
-    let (mut prog, tags) = shamrocq_compiler::compile_sources(&refs)?;
+    let (mut prog, tags) = shamrocq_compiler::compile_sources(&refs, cli.max_pass_iterations)?;
     if cli.embed_tags {
         prog.header.tags = tags.entries().into_iter().map(|(name, _)| name).collect();
     }

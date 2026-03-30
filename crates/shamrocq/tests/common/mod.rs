@@ -2,11 +2,6 @@
 
 use shamrocq::{Value, Vm};
 
-use shamrocq_compiler::codegen::compile_program;
-use shamrocq_compiler::desugar::desugar_program;
-use shamrocq_compiler::parser::parse;
-use shamrocq_compiler::resolve::{resolve_program, GlobalTable, TagTable};
-
 use std::collections::HashMap;
 
 pub struct Compiled {
@@ -27,20 +22,16 @@ impl Compiled {
 
 pub fn compile_scheme(files: &[&str]) -> Compiled {
     let root = env!("CARGO_MANIFEST_DIR").to_string() + "/../../scheme/";
-    let mut all_sexps = Vec::new();
-    for file in files {
+    let sources: Vec<String> = files.iter().map(|file| {
         let path = format!("{}{}", root, file);
-        let src = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("cannot read {}: {}", path, e));
-        let sexps = parse(&src)
-            .unwrap_or_else(|e| panic!("parse error in {}: {}", path, e));
-        all_sexps.extend(sexps);
-    }
-    let defs = desugar_program(&all_sexps).unwrap();
-    let mut tags = TagTable::new();
-    let mut globals = GlobalTable::new();
-    let rdefs = resolve_program(&defs, &mut tags, &mut globals).unwrap();
-    let prog = compile_program(&rdefs);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {}", path, e))
+    }).collect();
+    let source_refs: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
+    let (prog, tags) = shamrocq_compiler::compile_sources(
+        &source_refs,
+        shamrocq_compiler::DEFAULT_MAX_PASS_ITERATIONS,
+    ).unwrap();
     let funcs = prog.header.globals.iter().enumerate()
         .map(|(i, (name, _))| (name.clone(), i as u16))
         .collect();
@@ -108,7 +99,6 @@ pub fn print_stats(name: &str, vm: &Vm) {
                 "\"alloc_count_ctor\":{at},\"alloc_count_closure\":{ac},\"alloc_bytes_total\":{ab},",
                 "\"exec_instruction_count\":{ei},\"exec_call_count\":{ea},",
                 "\"exec_tail_call_count\":{et},",
-                "\"exec_direct_call_count\":{edc},\"exec_tail_direct_call_count\":{etdc},",
                 "\"exec_match_count\":{em},\"exec_peak_call_depth\":{ed},",
                 "\"final_heap_bytes\":{fh},\"final_stack_bytes\":{fs},\"final_free_bytes\":{ff}}}"
             ),
@@ -117,7 +107,6 @@ pub fn print_stats(name: &str, vm: &Vm) {
             at = s.alloc_count_ctor, ac = s.alloc_count_closure, ab = s.alloc_bytes_total,
             ei = s.exec_instruction_count, ea = s.exec_call_count,
             et = s.exec_tail_call_count,
-            edc = s.exec_direct_call_count, etdc = s.exec_tail_direct_call_count,
             em = s.exec_match_count, ed = s.exec_peak_call_depth,
             fh = snap.heap_bytes, fs = snap.stack_bytes, ff = snap.free_bytes,
         );

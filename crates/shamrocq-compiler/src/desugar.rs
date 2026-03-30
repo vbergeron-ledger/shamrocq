@@ -1,13 +1,13 @@
 use crate::parser::Sexp;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PrimOp {
     Add, Sub, Mul, Div, Neg, Eq, Lt,
     BytesLen, BytesGet, BytesEq, BytesCat,
 }
 
 /// High-level IR after desugaring, before variable resolution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Var(String),
     Int(i32),
@@ -26,7 +26,7 @@ pub enum Expr {
     Foreign(u16),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MatchCase {
     pub tag: String,
     pub bindings: Vec<String>,
@@ -34,7 +34,7 @@ pub struct MatchCase {
 }
 
 /// Top-level definition.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Define {
     pub name: String,
     pub body: Expr,

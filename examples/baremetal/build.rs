@@ -9,5 +9,9 @@ fn main() {
     println!("cargo::rerun-if-changed=scheme/demo.scm");
 
     let src = std::fs::read_to_string(manifest_dir.join("scheme/demo.scm")).expect("read demo.scm");
-    shamrocq_compiler::compile_to_dir(&[&src], Path::new(&out_dir)).expect("compile");
+    shamrocq_compiler::compile_to_dir(
+        &[&src],
+        shamrocq_compiler::DEFAULT_MAX_PASS_ITERATIONS,
+        Path::new(&out_dir),
+    ).expect("compile");
 }
