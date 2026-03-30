@@ -224,8 +224,8 @@ linear `Emitter` buffer.  Key design choices:
 - **Primitive operations** — `PrimOp` nodes compile their arguments, then
   emit the corresponding arithmetic or byte-string opcode (`ADD`, `SUB`,
   `BYTES_LEN`, etc.).
-- **Literals** — `Int(n)` emits `INT_CONST n`.  `Bytes(data)` emits
-  `BYTES_CONST len data`.
+- **Literals** — `Int(n)` emits `INT n`.  `Bytes(data)` emits
+  `BYTES len data`.
 - **Deferred lambda bodies** — lambda bodies are not emitted inline.  The
   `CLOSURE` instruction is emitted with a placeholder code address, and the
   body is queued.  After all globals are compiled, deferred bodies are
@@ -241,16 +241,17 @@ The `Ctx` struct tracks how de Bruijn indices map to `LOAD` slot indices
 during compilation:
 
 ```
-Frame layout:  [capture_0 ... capture_{N-1}  param  bind_0 ...]
-LOAD index:     0          ... N-1            N      N+1    ...
-De Bruijn:     (captured from parent)         0      ...
+Frame layout:  [param  bind_0  bind_1 ...]
+LOAD index:     0      1       2      ...
+
+Captures are NOT on the stack; they live in the closure on the heap and
+are accessed via LOAD_CAPTURE through the VM's env register.
 ```
 
-At frame depth `D` with `N` captures, let `d = D - N` (local bindings
-including param):
+At frame depth `D` (number of locals including param):
 
-- De Bruijn `idx < d` → `LOAD(D - 1 - idx)` — local variable.
-- De Bruijn `idx >= d` → look up in the captures list — parent variable.
+- De Bruijn `idx < D` → `LOAD(D - 1 - idx)` — local variable.
+- De Bruijn `idx >= D` → `LOAD_CAPTURE(cap_slot)` — captured parent variable.
 
 ### Global compilation
 
@@ -274,7 +275,7 @@ For `Match(scrutinee, cases)`:
 
 ### Letrec compilation
 
-1. Emit `CTOR0` — push a dummy placeholder value.
+1. Emit `PACK 0 0` — push a dummy placeholder value.
 2. Compile the val expression (expected to be a `Lambda`).
 3. Find which capture slot (if any) corresponds to the self-reference
    (de Bruijn 0 from the lambda's perspective).

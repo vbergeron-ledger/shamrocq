@@ -133,7 +133,8 @@ impl<'a> Arena<'a> {
     ) -> Result<Value, ArenaError> {
         let applied = args.len();
         let offset = self.alloc(1 + applied)?;
-        let callee_bits = callee.raw() & 0x00FF_FFFF; // kind:3 + payload:21 from lower 24 bits
+        let kind_bits = (callee.raw() >> 29) & 0x7;
+        let callee_bits = (kind_bits << 21) | (callee.raw() & PAYLOAD_21_RAW);
         let header = ((arity as u32 & 0xF) << 28)
             | ((applied as u32 & 0xF) << 24)
             | callee_bits;
@@ -166,6 +167,29 @@ impl<'a> Arena<'a> {
     pub fn application_arg(&self, val: Value, idx: usize) -> Value {
         let base = val.application_offset();
         Value::from_raw(self.read_word(base + (1 + idx) * 4))
+    }
+
+    pub fn extend_application(
+        &mut self,
+        app: Value,
+        extra_arg: Value,
+    ) -> Result<Value, ArenaError> {
+        let old_applied = self.application_applied(app) as usize;
+        let arity = self.application_arity(app);
+        let new_applied = old_applied + 1;
+        let offset = self.alloc(1 + new_applied)?;
+        let old_header = self.read_word(app.application_offset());
+        let callee_bits = old_header & 0x00FF_FFFF;
+        let header = ((arity as u32 & 0xF) << 28)
+            | ((new_applied as u32 & 0xF) << 24)
+            | callee_bits;
+        self.write_word(offset, header);
+        for i in 0..old_applied {
+            let arg = self.application_arg(app, i);
+            self.write_word(offset + (1 + i) * 4, arg.raw());
+        }
+        self.write_word(offset + (1 + old_applied) * 4, extra_arg.raw());
+        Ok(Value::application(offset))
     }
 
     // -- Bytes --

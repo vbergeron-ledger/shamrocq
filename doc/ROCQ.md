@@ -40,7 +40,7 @@ The extracted code:
     ((Cons a t) `(Cons ,(f a) ,(@ map f t))))))
 ```
 
-compiles to `CTOR0 2` for nil, `CTOR 3 2` for cons cells, and `MATCH`/`BIND`
+compiles to `PACK 2 0` for nil, `PACK 3 2` for cons cells, and `MATCH`/`BIND`
 for destructuring — no special extraction directives needed.
 
 ### Building and inspecting lists from Rust
@@ -164,7 +164,7 @@ Extract Inlined Constant timeout  => "1000".
 
 `Extract Inlined Constant` replaces every occurrence of the constant with
 the literal value, so no global slot is consumed and the integer compiles to
-a single `INT_CONST` instruction.
+a single `INT` instruction.
 
 For constants that are computed from others, extract the final value:
 

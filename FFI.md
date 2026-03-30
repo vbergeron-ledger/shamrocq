@@ -75,14 +75,15 @@ vm.load_program(&prog)?;
 | Layer | What happens |
 |-------|-------------|
 | **Scheme** | `(define-foreign clamp (lo hi x))` compiles to a normal 3-arg curried lambda whose innermost body packs the args into a constructor and calls the foreign value. |
-| **Bytecode** | The `define-foreign` global body is `FOREIGN_FN_CONST idx; RET`, which stores a `Value::foreign_fn(idx)` in the global slot at load time. |
-| **VM** | `CALL`/`TAIL_CALL` detect `Value::foreign_fn`, look up `foreign_fns[idx]`, and invoke the Rust function pointer directly — no bytecode frame pushed. |
+| **Bytecode** | The `define-foreign` global body is `FUNCTION idx 1; RET`, which stores a `Value::foreign_fn(idx, 1)` in the global slot at load time. |
+| **VM** | `CALL`/`TAIL_CALL` detect `is_foreign_fn()`, look up `foreign_fns[fn_addr()]`, and invoke the Rust function pointer directly — no bytecode frame pushed. |
 
 ### Value encoding
 
-`Value::foreign_fn(idx)` uses the `0b011` kind tag (one of the previously
-unused 3-bit slots). It satisfies `is_callable()`, so it flows through all
-existing call paths without special-casing outside the call sites.
+Foreign functions are encoded as `Function` values (kind tag `0b111`) with the
+`foreign` bit set. The payload is `foreign:1 | arity:4 | addr:16`. They
+satisfy `is_callable()` (bit 31 == 1) and `is_foreign_fn()`, so they flow
+through all call paths without special-casing outside the call sites.
 
 ## Limits
 

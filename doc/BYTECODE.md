@@ -7,11 +7,11 @@ All multi-byte integers are **little-endian**.
 
 ## Blob layout
 
-A compiled blob is a single contiguous byte array split into two sections:
+A compiled blob is a single contiguous byte array:
 
 ```
 ┌───────────────────────┐
-│  Header               │  global table (variable length)
+│  Header               │  magic, version, global table, tag table
 ├───────────────────────┤
 │  Code                 │  instruction stream
 └───────────────────────┘
@@ -20,12 +20,19 @@ A compiled blob is a single contiguous byte array split into two sections:
 ### Header
 
 ```
-n_globals : u16le            number of top-level defines
+magic    : [u8; 4]           "SMRQ"
+version  : u16le             bytecode version (currently 2)
+n_globals: u16le             number of top-level defines
 
 For each global (repeated n_globals times):
   name_len : u8              length of the name in bytes
   name     : [u8; name_len]  UTF-8 name (e.g. "negb", "append")
   offset   : u16le           byte offset into the Code section
+
+n_tags   : u16le             number of embedded constructor tags
+For each tag (repeated n_tags times):
+  name_len : u8
+  name     : [u8; name_len]  UTF-8 tag name (e.g. "True", "Cons")
 ```
 
 The index of a global in this table is its **slot index**, used by `GLOBAL`
@@ -41,315 +48,347 @@ within this section.
 
 Each instruction is a 1-byte opcode followed by zero or more inline operands.
 
-### `CTOR0` (0x01) — push nullary constructor
+### Stack / locals
+
+#### `LOAD` (0x01)
 
 ```
-01 tag:u8
+01 idx:u8
 ```
 
-Push a nullary constructor value onto the stack.  No heap allocation.
+Copy the value at frame slot `idx` and push it. Slot 0 is the function
+parameter (bottom of frame), higher indices are let-bindings.
 
-### `CTOR` (0x02) — allocate tagged constructor
-
-```
-02 tag:u8 arity:u8
-```
-
-Pop `arity` values from the stack (top = last field), heap-allocate a constructor
-with the given tag, push the result.
-
-### `LOAD` (0x03) — load local
+#### `LOAD2` (0x02)
 
 ```
-03 idx:u8
+02 idx_a:u8 idx_b:u8
 ```
 
-Copy the value at frame slot `idx` and push it.  Slot 0 is the bottom of the
-current frame (first capture or parameter).
+Push two frame slots in one instruction. Equivalent to `LOAD a; LOAD b`.
 
-### `GLOBAL` (0x04) — load global
+#### `LOAD3` (0x03)
 
 ```
-04 idx:u16le
+03 idx_a:u8 idx_b:u8 idx_c:u8
+```
+
+Push three frame slots in one instruction.
+
+#### `LOAD_CAPTURE` (0x04)
+
+```
+04 idx:u8
+```
+
+Push capture slot `idx` from the current closure's environment (accessed via
+the VM's `env` register, not the stack frame).
+
+#### `GLOBAL` (0x05)
+
+```
+05 idx:u16le
 ```
 
 Push the already-evaluated value of global slot `idx`.
 
-### `CLOSURE` (0x05) — allocate closure
+#### `DROP` (0x06)
 
 ```
-05 code_addr:u16le n_captures:u8
-```
-
-If `n_captures` is 0, a `bare_fn` Value encoding the `code_addr` directly is
-pushed — no heap allocation.
-
-Otherwise, pop `n_captures` values from the stack (top = last capture),
-heap-allocate a closure object pointing to `code_addr` with those captures,
-push the result.
-
-Heap layout of a closure:
-
-```
-word 0:  code_addr:u16 << 16 | n_captures:u16
-word 1…: capture values (raw u32 each)
-```
-
-### `CALL` (0x06) — non-tail call
-
-```
-06
-```
-
-Pop `arg`, pop `func`.  Save `(return_pc, frame_base)` on the call stack.
-Unpack the closure's captures and `arg` into a new frame, jump to the
-closure's code address.
-
-### `TAIL_CALL` (0x07) — tail call
-
-```
-07
-```
-
-Pop `arg`, pop `func`.  **Truncate** the current frame (reuse call depth).
-Unpack captures and `arg` into the recycled frame, jump.  No call-stack
-growth — this is how tail recursion stays bounded.
-
-### `RET` (0x08) — return
-
-```
-08
-```
-
-Pop the result, discard the current frame.  If call depth is zero, return to
-the Rust caller.  Otherwise restore `(return_pc, frame_base)` from the call
-stack and push the result in the caller's frame.
-
-### `MATCH` (0x09) — tag dispatch
-
-```
-09 n_cases:u8
-   [tag:u8 arity:u8 offset:u16le] × n_cases
-```
-
-Pop the scrutinee.  Scan the case table for a matching tag.  If `arity > 0`,
-re-push the scrutinee (for a subsequent `BIND`).  Jump to `offset`.
-
-If no case matches → `MatchFailure`.
-
-### `JMP` (0x0A) — unconditional jump
-
-```
-0A offset:u16le
-```
-
-Set `pc = offset`.  Used after non-tail match branches to skip remaining
-cases.
-
-### `BIND` (0x0B) — destructure constructor
-
-```
-0B n:u8
-```
-
-Pop the scrutinee constructor, push its first `n` fields (field 0 first).  This
-makes constructor fields available as local bindings after a `MATCH`.
-
-### `DROP` (0x0C) — discard stack slots
-
-```
-0C n:u8
+06 n:u8
 ```
 
 Remove the top `n` values from the stack.
 
-### `ERROR` (0x0D) — abort
+#### `SLIDE` (0x07)
 
 ```
-0D
+07 n:u8
 ```
 
-Halt with `MatchFailure(tag=0xFF)`.  Emitted for exhaustiveness-checked match
-arms that should be unreachable.
-
-### `SLIDE` (0x0E) — keep result, drop bindings
-
-```
-0E n:u8
-```
-
-Pop the result, drop `n` values below it, re-push the result.  Used to clean
+Pop the result, drop `n` values below it, re-push the result. Used to clean
 up `let` and `match` bindings in non-tail position.
 
-### `FIXPOINT` (0x0F) — tie recursive knot
+### Data
+
+#### `PACK` (0x08)
 
 ```
-0F cap_idx:u8
+08 tag:u8 arity:u8
 ```
 
-Peek the closure at TOS.  If `cap_idx != 0xFF`, mutate
+If `arity` is 0, push a nullary constructor value (no heap allocation).
+Otherwise pop `arity` values from the stack (top = last field), heap-allocate
+a constructor with the given tag, push the result.
+
+#### `UNPACK` (0x09)
+
+```
+09 n:u8
+```
+
+Pop a constructor, push its first `n` fields (field 0 first). Used for
+single-case match destructuring.
+
+#### `BIND` (0x0A)
+
+```
+0A n:u8
+```
+
+Pop the scrutinee constructor, push its first `n` fields. Like `UNPACK` but
+used after a `MATCH` instruction to make constructor fields available as
+local bindings.
+
+#### `FUNCTION` (0x0B)
+
+```
+0B idx:u16le arity:u8
+```
+
+Push a `Value::foreign_fn(idx, arity)` — a host function callable from Scheme.
+The `idx` is the registration index used with `vm.register_foreign()`.
+
+#### `CLOSURE` (0x0C)
+
+```
+0C code_addr:u16le arity:u8 n_captures:u8
+```
+
+If `n_captures` is 0, push a `Value::function(code_addr, arity)` — no heap
+allocation.
+
+Otherwise, pop `n_captures` values from the stack (top = last capture),
+heap-allocate a closure object, push the result.
+
+Heap layout of a closure:
+
+```
+word 0:  code_addr:u16 | arity:u8 | n_captures:u8
+word 1…: capture values (raw u32 each)
+```
+
+#### `FIXPOINT` (0x0D)
+
+```
+0D cap_idx:u8
+```
+
+Peek the closure at TOS. If `cap_idx != 0xFF`, mutate
 `closure.captures[cap_idx]` to point to the closure itself (self-reference).
 Then overwrite slot 1 (the `letrec` dummy) with the closure and pop TOS.
 
 This is the only mutation in the entire VM — it makes `letrec` work without
 a GC or indirection cell.
 
-### `INT_CONST` (0x10) — push integer
+### Control flow
+
+#### `CALL` (0x0E)
 
 ```
-10 value:i32le
+0E
 ```
 
-Push a 29-bit signed integer Value onto the stack. No heap allocation.
+Pop `arg`, pop `func`. Save `(return_pc, frame_base, env)` on the call stack.
+Set up a new frame with `arg`, jump to the function's code address.
 
-### `ADD` (0x11) — integer add
+For closures, the closure itself becomes the `env` register (captures accessed
+via `LOAD_CAPTURE`). For bare functions (Function values), `env` is unused.
+For foreign functions, the host Rust function is called directly — no bytecode
+frame pushed.
+
+#### `TAIL_CALL` (0x0F)
 
 ```
-11
+0F
 ```
 
-Pop two integers, push their sum (wrapping).
+Pop `arg`, pop `func`. **Truncate** the current frame (reuse call depth).
+Set up `arg` in the recycled frame, jump. No call-stack growth — this is how
+tail recursion stays bounded.
 
-### `SUB` (0x12) — integer subtract
+#### `CALL_DIRECT` (0x10)
+
+```
+10 code_addr:u16le n_args:u8
+```
+
+The `n_args` values are already on the stack. Save `(return_pc, frame_base)`
+on the call stack. Set `frame_base` to point at the first argument. Jump to
+`code_addr`. No function Value on the stack — the target is statically known.
+
+This is an optimization for fully-applied calls to multi-arity globals,
+bypassing the curried closure chain.
+
+#### `TAIL_CALL_DIRECT` (0x11)
+
+```
+11 code_addr:u16le n_args:u8
+```
+
+Like `CALL_DIRECT` but in tail position. Saves the `n_args` values, truncates
+the current frame, re-pushes the arguments, and jumps. No call-stack growth.
+
+#### `RET` (0x12)
 
 ```
 12
 ```
 
-Pop `b`, pop `a`, push `a - b` (wrapping).
+Pop the result, discard the current frame. If call depth is zero, return to
+the Rust caller. Otherwise restore `(return_pc, frame_base, env)` from the
+call stack and push the result in the caller's frame.
 
-### `MUL` (0x13) — integer multiply
-
-```
-13
-```
-
-Pop two integers, push their product (wrapping).
-
-### `DIV` (0x14) — integer divide
+#### `MATCH` (0x13)
 
 ```
-14
+13 n_cases:u8
+   [tag:u8 arity:u8 offset:u16le] × n_cases
 ```
 
-Pop `b`, pop `a`, push `a / b` (wrapping).
+Pop the scrutinee. Scan the case table for a matching tag. If `arity > 0`,
+re-push the scrutinee (for a subsequent `BIND`). Jump to `offset`.
 
-### `NEG` (0x15) — integer negate
+If no case matches → `MatchFailure`.
+
+#### `JMP` (0x14)
+
+```
+14 offset:u16le
+```
+
+Set `pc = offset`. Used after non-tail match branches to skip remaining cases.
+
+#### `ERROR` (0x15)
 
 ```
 15
 ```
 
+Halt with `MatchFailure(tag=0xFF)`. Emitted for exhaustiveness-checked match
+arms that should be unreachable.
+
+### Integer
+
+#### `INT` (0x16)
+
+```
+16 value:i32le
+```
+
+Push a 29-bit signed integer Value onto the stack. No heap allocation.
+
+#### `ADD` (0x17)
+
+Pop two integers, push their sum (wrapping).
+
+#### `SUB` (0x18)
+
+Pop `b`, pop `a`, push `a - b` (wrapping).
+
+#### `MUL` (0x19)
+
+Pop two integers, push their product (wrapping).
+
+#### `DIV` (0x1A)
+
+Pop `b`, pop `a`, push `a / b` (wrapping).
+
+#### `NEG` (0x1B)
+
 Pop one integer, push its negation.
 
-### `EQ` (0x16) — integer equality
-
-```
-16
-```
+#### `EQ` (0x1C)
 
 Pop two integers. Push `True` if equal, `False` otherwise.
 
-### `LT` (0x17) — integer less-than
-
-```
-17
-```
+#### `LT` (0x1D)
 
 Pop `b`, pop `a`. Push `True` if `a < b`, `False` otherwise.
 
-### `BYTES_CONST` (0x18) — push byte string
+### Bytes
+
+#### `BYTES` (0x1E)
 
 ```
-18 len:u8 data:[u8; len]
+1E len:u8 data:[u8; len]
 ```
 
 Heap-allocate a byte string from inline data, push the result.
 
-### `BYTES_LEN` (0x19) — byte string length
-
-```
-19
-```
+#### `BYTES_LEN` (0x1F)
 
 Pop a byte string, push its length as an integer.
 
-### `BYTES_GET` (0x1A) — byte string indexing
+#### `BYTES_GET` (0x20)
 
-```
-1A
-```
+Pop index (integer), pop byte string. Push the byte at that index as an
+integer. Errors with `IndexOutOfBounds` if out of range.
 
-Pop index (integer), pop byte string. Push the byte at that index as an integer. Errors with `IndexOutOfBounds` if out of range.
-
-### `BYTES_EQ` (0x1B) — byte string equality
-
-```
-1B
-```
+#### `BYTES_EQ` (0x21)
 
 Pop two byte strings. Push `True` if equal, `False` otherwise.
 
-### `BYTES_CONCAT` (0x1C) — byte string concatenation
+#### `BYTES_CONCAT` (0x22)
 
-```
-1C
-```
-
-Pop two byte strings. Heap-allocate and push their concatenation. Errors with `BytesOverflow` if the combined length exceeds 255.
-
-### `CALL_DIRECT` (0x1D) — direct known-arity call
-
-```
-1D code_addr:u16le n_args:u8
-```
-
-The `n_args` values are already on the stack. Save `(return_pc, frame_base)` on the call stack. Set `frame_base` to point at the first argument (stack_depth - n_args). Jump to `code_addr`. No function Value on the stack — the target is statically known.
-
-This is an optimization for fully-applied calls to multi-arity globals, bypassing the curried closure chain.
-
-### `TAIL_CALL_DIRECT` (0x1E) — tail direct known-arity call
-
-```
-1E code_addr:u16le n_args:u8
-```
-
-Like `CALL_DIRECT` but in tail position. Saves the `n_args` values, truncates the current frame, re-pushes the arguments, and jumps. No call-stack growth.
+Pop two byte strings. Heap-allocate and push their concatenation. Errors
+with `BytesOverflow` if the combined length exceeds 255.
 
 ## Opcode summary
 
 | Mnemonic | Hex | Operands | Size |
 |---|---|---|---|
-| `CTOR0` | `0x01` | `tag:u8` | 2 |
-| `CTOR` | `0x02` | `tag:u8 arity:u8` | 3 |
-| `LOAD` | `0x03` | `idx:u8` | 2 |
-| `GLOBAL` | `0x04` | `idx:u16le` | 3 |
-| `CLOSURE` | `0x05` | `code_addr:u16le n_captures:u8` | 4 |
-| `CALL` | `0x06` | — | 1 |
-| `TAIL_CALL` | `0x07` | — | 1 |
-| `RET` | `0x08` | — | 1 |
-| `MATCH` | `0x09` | `n:u8 [tag:u8 arity:u8 off:u16le]*n` | 2+4n |
-| `JMP` | `0x0A` | `offset:u16le` | 3 |
-| `BIND` | `0x0B` | `n:u8` | 2 |
-| `DROP` | `0x0C` | `n:u8` | 2 |
-| `ERROR` | `0x0D` | — | 1 |
-| `SLIDE` | `0x0E` | `n:u8` | 2 |
-| `FIXPOINT` | `0x0F` | `cap_idx:u8` | 2 |
-| `INT_CONST` | `0x10` | `value:i32le` | 5 |
-| `ADD` | `0x11` | — | 1 |
-| `SUB` | `0x12` | — | 1 |
-| `MUL` | `0x13` | — | 1 |
-| `DIV` | `0x14` | — | 1 |
-| `NEG` | `0x15` | — | 1 |
-| `EQ` | `0x16` | — | 1 |
-| `LT` | `0x17` | — | 1 |
-| `BYTES_CONST` | `0x18` | `len:u8 data:[u8;len]` | 2+len |
-| `BYTES_LEN` | `0x19` | — | 1 |
-| `BYTES_GET` | `0x1A` | — | 1 |
-| `BYTES_EQ` | `0x1B` | — | 1 |
-| `BYTES_CONCAT` | `0x1C` | — | 1 |
-| `CALL_DIRECT` | `0x1D` | `code_addr:u16le n_args:u8` | 4 |
-| `TAIL_CALL_DIRECT` | `0x1E` | `code_addr:u16le n_args:u8` | 4 |
+| `LOAD` | `0x01` | `idx:u8` | 2 |
+| `LOAD2` | `0x02` | `idx_a:u8 idx_b:u8` | 3 |
+| `LOAD3` | `0x03` | `idx_a:u8 idx_b:u8 idx_c:u8` | 4 |
+| `LOAD_CAPTURE` | `0x04` | `idx:u8` | 2 |
+| `GLOBAL` | `0x05` | `idx:u16le` | 3 |
+| `DROP` | `0x06` | `n:u8` | 2 |
+| `SLIDE` | `0x07` | `n:u8` | 2 |
+| `PACK` | `0x08` | `tag:u8 arity:u8` | 3 |
+| `UNPACK` | `0x09` | `n:u8` | 2 |
+| `BIND` | `0x0A` | `n:u8` | 2 |
+| `FUNCTION` | `0x0B` | `idx:u16le arity:u8` | 4 |
+| `CLOSURE` | `0x0C` | `code_addr:u16le arity:u8 n_captures:u8` | 5 |
+| `FIXPOINT` | `0x0D` | `cap_idx:u8` | 2 |
+| `CALL` | `0x0E` | — | 1 |
+| `TAIL_CALL` | `0x0F` | — | 1 |
+| `CALL_DIRECT` | `0x10` | `code_addr:u16le n_args:u8` | 4 |
+| `TAIL_CALL_DIRECT` | `0x11` | `code_addr:u16le n_args:u8` | 4 |
+| `RET` | `0x12` | — | 1 |
+| `MATCH` | `0x13` | `n:u8 [tag:u8 arity:u8 off:u16le]*n` | 2+4n |
+| `JMP` | `0x14` | `offset:u16le` | 3 |
+| `ERROR` | `0x15` | — | 1 |
+| `INT` | `0x16` | `value:i32le` | 5 |
+| `ADD` | `0x17` | — | 1 |
+| `SUB` | `0x18` | — | 1 |
+| `MUL` | `0x19` | — | 1 |
+| `DIV` | `0x1A` | — | 1 |
+| `NEG` | `0x1B` | — | 1 |
+| `EQ` | `0x1C` | — | 1 |
+| `LT` | `0x1D` | — | 1 |
+| `BYTES` | `0x1E` | `len:u8 data:[u8;len]` | 2+len |
+| `BYTES_LEN` | `0x1F` | — | 1 |
+| `BYTES_GET` | `0x20` | — | 1 |
+| `BYTES_EQ` | `0x21` | — | 1 |
+| `BYTES_CONCAT` | `0x22` | — | 1 |
+
+## Value kinds
+
+Values are 32-bit words with a 3-bit kind tag in bits 31:29.
+
+| Kind | Tag | Value word payload | Heap layout | Heap size |
+|------|-----|--------------------|-------------|-----------|
+| Ctor | `000` | `tag:8 \| offset:21` | `field[0], field[1], ...` | `arity × 4` (0 if nullary) |
+| Integer | `001` | `value:29` (sign-extended) | *(none)* | 0 |
+| Bytes | `010` | `len:8 \| offset:21` | raw bytes, 4-aligned | `ceil(len/4) × 4` |
+| *(unused)* | `011` | — | — | — |
+| *(unused)* | `100` | — | — | — |
+| Application | `101` | `offset:21` | `[arity:4\|applied:4\|kind:3\|payload:21], arg[0..applied-1]` | `(1+applied) × 4` |
+| Closure | `110` | `offset:21` | `[code_addr:16\|arity:8\|n_cap:8], cap[0..n_cap-1]` | `(1+n_cap) × 4` |
+| Function | `111` | `foreign:1 \| arity:4 \| addr:16` | *(none)* | 0 |
+
+Callable detection: bit 31 == 1 (kinds `100`–`111`).
 
 ## Generated companion files
 

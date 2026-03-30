@@ -65,40 +65,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 // ── opcodes ──────────────────────────────────────────────────────────────────
 
 mod op {
-    pub const PACK: u8 = 0x01;
-    pub const UNPACK: u8 = 0x02;
-    pub const LOAD: u8 = 0x03;
-    pub const GLOBAL: u8 = 0x04;
-    pub const CLOSURE: u8 = 0x05;
-    pub const CALL: u8 = 0x06;
-    pub const TAIL_CALL: u8 = 0x07;
-    pub const RET: u8 = 0x08;
-    pub const MATCH: u8 = 0x09;
-    pub const JMP: u8 = 0x0A;
-    pub const BIND: u8 = 0x0B;
-    pub const DROP: u8 = 0x0C;
-    pub const ERROR: u8 = 0x0D;
-    pub const SLIDE: u8 = 0x0E;
-    pub const FIXPOINT: u8 = 0x0F;
-    pub const INT_CONST: u8 = 0x10;
-    pub const ADD: u8 = 0x11;
-    pub const SUB: u8 = 0x12;
-    pub const MUL: u8 = 0x13;
-    pub const DIV: u8 = 0x14;
-    pub const NEG: u8 = 0x15;
-    pub const EQ: u8 = 0x16;
-    pub const LT: u8 = 0x17;
-    pub const BYTES_CONST: u8 = 0x18;
-    pub const BYTES_LEN: u8 = 0x19;
-    pub const BYTES_GET: u8 = 0x1A;
-    pub const BYTES_EQ: u8 = 0x1B;
-    pub const BYTES_CONCAT: u8 = 0x1C;
-    pub const CALL_DIRECT: u8 = 0x1D;
-    pub const TAIL_CALL_DIRECT: u8 = 0x1E;
-    pub const FOREIGN_FN_CONST: u8 = 0x1F;
-    pub const LOAD_CAPTURE: u8 = 0x20;
-    pub const LOAD2: u8 = 0x21;
-    pub const LOAD3: u8 = 0x22;
+    // Stack / locals
+    pub const LOAD: u8 = 0x01;
+    pub const LOAD2: u8 = 0x02;
+    pub const LOAD3: u8 = 0x03;
+    pub const LOAD_CAPTURE: u8 = 0x04;
+    pub const GLOBAL: u8 = 0x05;
+    pub const DROP: u8 = 0x06;
+    pub const SLIDE: u8 = 0x07;
+
+    // Data
+    pub const PACK: u8 = 0x08;
+    pub const UNPACK: u8 = 0x09;
+    pub const BIND: u8 = 0x0A;
+    pub const FUNCTION: u8 = 0x0B;
+    pub const CLOSURE: u8 = 0x0C;
+    pub const FIXPOINT: u8 = 0x0D;
+
+    // Control flow
+    pub const CALL: u8 = 0x0E;
+    pub const TAIL_CALL: u8 = 0x0F;
+    pub const CALL_DIRECT: u8 = 0x10;
+    pub const TAIL_CALL_DIRECT: u8 = 0x11;
+    pub const RET: u8 = 0x12;
+    pub const MATCH: u8 = 0x13;
+    pub const JMP: u8 = 0x14;
+    pub const ERROR: u8 = 0x15;
+
+    // Integer
+    pub const INT: u8 = 0x16;
+    pub const ADD: u8 = 0x17;
+    pub const SUB: u8 = 0x18;
+    pub const MUL: u8 = 0x19;
+    pub const DIV: u8 = 0x1A;
+    pub const NEG: u8 = 0x1B;
+    pub const EQ: u8 = 0x1C;
+    pub const LT: u8 = 0x1D;
+
+    // Bytes
+    pub const BYTES: u8 = 0x1E;
+    pub const BYTES_LEN: u8 = 0x1F;
+    pub const BYTES_GET: u8 = 0x20;
+    pub const BYTES_EQ: u8 = 0x21;
+    pub const BYTES_CONCAT: u8 = 0x22;
 }
 
 // ── data types ───────────────────────────────────────────────────────────────
@@ -211,12 +220,17 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
         pc += 1;
 
         match opcode {
-            op::PACK => { pc += 2; }
-            op::UNPACK => { pc += 1; }
             op::LOAD => { pc += 1; }
             op::LOAD2 => { pc += 2; }
             op::LOAD3 => { pc += 3; }
+            op::LOAD_CAPTURE => { pc += 1; }
             op::GLOBAL => { pc += 2; }
+            op::DROP => { pc += 1; }
+            op::SLIDE => { pc += 1; }
+            op::PACK => { pc += 2; }
+            op::UNPACK => { pc += 1; }
+            op::BIND => { pc += 1; }
+            op::FUNCTION => { pc += 3; }
             op::CLOSURE => {
                 let target = u16::from_le_bytes([code[pc], code[pc + 1]]);
                 let arity = code[pc + 2];
@@ -224,8 +238,20 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
                 pc += 4;
                 closures.push(ClosureRef { pc: instr_pc, target, arity, n_captures });
             }
+            op::FIXPOINT => { pc += 1; }
             op::CALL => {}
             op::TAIL_CALL => {
+                if pc < code.len() { after_term.push(pc as u16); }
+            }
+            op::CALL_DIRECT => {
+                let target = u16::from_le_bytes([code[pc], code[pc + 1]]);
+                pc += 3;
+                call_direct_targets.insert(target);
+            }
+            op::TAIL_CALL_DIRECT => {
+                let target = u16::from_le_bytes([code[pc], code[pc + 1]]);
+                pc += 3;
+                call_direct_targets.insert(target);
                 if pc < code.len() { after_term.push(pc as u16); }
             }
             op::RET => {
@@ -241,33 +267,16 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
                 }
             }
             op::JMP => { pc += 2; }
-            op::BIND => { pc += 1; }
-            op::DROP => { pc += 1; }
             op::ERROR => {
                 if pc < code.len() { after_term.push(pc as u16); }
             }
-            op::SLIDE => { pc += 1; }
-            op::FIXPOINT => { pc += 1; }
-            op::INT_CONST => { pc += 4; }
+            op::INT => { pc += 4; }
             op::ADD | op::SUB | op::MUL | op::DIV | op::NEG | op::EQ | op::LT => {}
-            op::BYTES_CONST => {
+            op::BYTES => {
                 let len = code[pc] as usize;
                 pc += 1 + len;
             }
             op::BYTES_LEN | op::BYTES_GET | op::BYTES_EQ | op::BYTES_CONCAT => {}
-            op::CALL_DIRECT => {
-                let target = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                pc += 3;
-                call_direct_targets.insert(target);
-            }
-            op::TAIL_CALL_DIRECT => {
-                let target = u16::from_le_bytes([code[pc], code[pc + 1]]);
-                pc += 3;
-                call_direct_targets.insert(target);
-                if pc < code.len() { after_term.push(pc as u16); }
-            }
-            op::FOREIGN_FN_CONST => { pc += 3; }
-            op::LOAD_CAPTURE => { pc += 1; }
             other => {
                 return Err(format!(
                     "unknown opcode 0x{:02X} at code+0x{:04X}",
@@ -530,18 +539,6 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
         }
 
         match opcode {
-            op::PACK => {
-                let tag = read_u8(code, pc)?;
-                let arity = read_u8(code, pc + 1)?;
-                pc += 2;
-                instr!(instr_pc, "PACK", "{} arity={}", fmt_tag(tag, &tag_names, c), arity);
-            }
-            op::UNPACK => {
-                let n = read_u8(code, pc)?;
-                pc += 1;
-                bind_depth += n as usize;
-                instr!(instr_pc, "UNPACK", "{}", n);
-            }
             op::LOAD => {
                 let idx = read_u8(code, pc)?;
                 pc += 1;
@@ -620,6 +617,42 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
                     .unwrap_or("?");
                 instr!(instr_pc, "GLOBAL", "{} {}({}){}", idx, c.cyn, name, c.rst);
             }
+            op::DROP => {
+                let n = read_u8(code, pc)?;
+                pc += 1;
+                bind_depth = bind_depth.saturating_sub(n as usize);
+                instr!(instr_pc, "DROP", "{}", n);
+            }
+            op::SLIDE => {
+                let n = read_u8(code, pc)?;
+                pc += 1;
+                bind_depth = bind_depth.saturating_sub(n as usize);
+                instr!(instr_pc, "SLIDE", "{}", n);
+            }
+            op::PACK => {
+                let tag = read_u8(code, pc)?;
+                let arity = read_u8(code, pc + 1)?;
+                pc += 2;
+                instr!(instr_pc, "PACK", "{} arity={}", fmt_tag(tag, &tag_names, c), arity);
+            }
+            op::UNPACK => {
+                let n = read_u8(code, pc)?;
+                pc += 1;
+                bind_depth += n as usize;
+                instr!(instr_pc, "UNPACK", "{}", n);
+            }
+            op::BIND => {
+                let n = read_u8(code, pc)?;
+                pc += 1;
+                bind_depth += n as usize;
+                instr!(instr_pc, "BIND", "{}", n);
+            }
+            op::FUNCTION => {
+                let idx = read_u16le(code, pc)?;
+                let arity = read_u8(code, pc + 2)?;
+                pc += 3;
+                instr!(instr_pc, "FUNCTION", "idx={} arity={}", idx, arity);
+            }
             op::CLOSURE => {
                 let code_addr = read_u16le(code, pc)?;
                 let arity = read_u8(code, pc + 2)?;
@@ -632,11 +665,34 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
                     instr!(instr_pc, "CLOSURE", "code+0x{:04X}{} arity={} captures={}", code_addr, lbl, arity, n_cap);
                 }
             }
+            op::FIXPOINT => {
+                let cap_idx = read_u8(code, pc)?;
+                pc += 1;
+                if cap_idx == 0xFF {
+                    instr!(instr_pc, "FIXPOINT", "(no self-capture)");
+                } else {
+                    instr!(instr_pc, "FIXPOINT", "cap_idx={}", cap_idx);
+                }
+            }
             op::CALL => {
                 instr!(instr_pc, "CALL");
             }
             op::TAIL_CALL => {
                 instr!(instr_pc, "TAIL_CALL");
+            }
+            op::CALL_DIRECT => {
+                let code_addr = read_u16le(code, pc)?;
+                let n_args = read_u8(code, pc + 2)?;
+                pc += 3;
+                let lbl = fmt_label(code_addr, &labels, c);
+                instr!(instr_pc, "CALL_DIRECT", "code+0x{:04X}{} args={}", code_addr, lbl, n_args);
+            }
+            op::TAIL_CALL_DIRECT => {
+                let code_addr = read_u16le(code, pc)?;
+                let n_args = read_u8(code, pc + 2)?;
+                pc += 3;
+                let lbl = fmt_label(code_addr, &labels, c);
+                instr!(instr_pc, "TAIL_CALL_DIRECT", "code+0x{:04X}{} args={}", code_addr, lbl, n_args);
             }
             op::RET => {
                 instr!(instr_pc, "RET");
@@ -667,40 +723,13 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
                 let lbl = fmt_label(offset, &labels, c);
                 instr!(instr_pc, "JMP", "code+0x{:04X}{}", offset, lbl);
             }
-            op::BIND => {
-                let n = read_u8(code, pc)?;
-                pc += 1;
-                bind_depth += n as usize;
-                instr!(instr_pc, "BIND", "{}", n);
-            }
-            op::DROP => {
-                let n = read_u8(code, pc)?;
-                pc += 1;
-                bind_depth = bind_depth.saturating_sub(n as usize);
-                instr!(instr_pc, "DROP", "{}", n);
-            }
             op::ERROR => {
                 instr!(instr_pc, "ERROR");
             }
-            op::SLIDE => {
-                let n = read_u8(code, pc)?;
-                pc += 1;
-                bind_depth = bind_depth.saturating_sub(n as usize);
-                instr!(instr_pc, "SLIDE", "{}", n);
-            }
-            op::FIXPOINT => {
-                let cap_idx = read_u8(code, pc)?;
-                pc += 1;
-                if cap_idx == 0xFF {
-                    instr!(instr_pc, "FIXPOINT", "(no self-capture)");
-                } else {
-                    instr!(instr_pc, "FIXPOINT", "cap_idx={}", cap_idx);
-                }
-            }
-            op::INT_CONST => {
+            op::INT => {
                 let value = read_i32le(code, pc)?;
                 pc += 4;
-                instr!(instr_pc, "INT_CONST", "{}", value);
+                instr!(instr_pc, "INT", "{}", value);
             }
             op::ADD => instr!(instr_pc, "ADD"),
             op::SUB => instr!(instr_pc, "SUB"),
@@ -709,44 +738,24 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
             op::NEG => instr!(instr_pc, "NEG"),
             op::EQ  => instr!(instr_pc, "EQ"),
             op::LT  => instr!(instr_pc, "LT"),
-            op::BYTES_CONST => {
+            op::BYTES => {
                 let len = read_u8(code, pc)? as usize;
                 pc += 1;
                 if pc + len > code.len() {
                     return Err(format!(
-                        "BYTES_CONST at {:04X}: data truncated (need {} bytes)",
+                        "BYTES at {:04X}: data truncated (need {} bytes)",
                         instr_pc, len
                     ));
                 }
                 let data = &code[pc..pc + len];
                 pc += len;
                 let display = escape_bytes(data);
-                instr!(instr_pc, "BYTES_CONST", "len={} {:?}", len, display);
+                instr!(instr_pc, "BYTES", "len={} {:?}", len, display);
             }
             op::BYTES_LEN    => instr!(instr_pc, "BYTES_LEN"),
             op::BYTES_GET    => instr!(instr_pc, "BYTES_GET"),
             op::BYTES_EQ     => instr!(instr_pc, "BYTES_EQ"),
             op::BYTES_CONCAT => instr!(instr_pc, "BYTES_CONCAT"),
-            op::CALL_DIRECT => {
-                let code_addr = read_u16le(code, pc)?;
-                let n_args = read_u8(code, pc + 2)?;
-                pc += 3;
-                let lbl = fmt_label(code_addr, &labels, c);
-                instr!(instr_pc, "CALL_DIRECT", "code+0x{:04X}{} args={}", code_addr, lbl, n_args);
-            }
-            op::TAIL_CALL_DIRECT => {
-                let code_addr = read_u16le(code, pc)?;
-                let n_args = read_u8(code, pc + 2)?;
-                pc += 3;
-                let lbl = fmt_label(code_addr, &labels, c);
-                instr!(instr_pc, "TAIL_CALL_DIRECT", "code+0x{:04X}{} args={}", code_addr, lbl, n_args);
-            }
-            op::FOREIGN_FN_CONST => {
-                let idx = read_u16le(code, pc)?;
-                let arity = read_u8(code, pc + 2)?;
-                pc += 3;
-                instr!(instr_pc, "FOREIGN_FN_CONST", "idx={} arity={}", idx, arity);
-            }
             other => {
                 return Err(format!(
                     "unknown opcode 0x{:02X} at code+0x{:04X}",

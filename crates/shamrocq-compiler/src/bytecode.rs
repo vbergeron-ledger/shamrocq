@@ -3,66 +3,97 @@
 /// Encoding: each instruction starts with a 1-byte opcode, followed by
 /// inline operands of fixed size per opcode. All multi-byte operands are
 /// little-endian.
-pub mod op {
-    pub const PACK: u8 = 0x01;
-    pub const UNPACK: u8 = 0x02;
-    pub const LOAD: u8 = 0x03;
-    pub const GLOBAL: u8 = 0x04;
-    pub const CLOSURE: u8 = 0x05;
-    pub const CALL: u8 = 0x06;
-    pub const TAIL_CALL: u8 = 0x07;
-    pub const RET: u8 = 0x08;
-    pub const MATCH: u8 = 0x09;
-    pub const JMP: u8 = 0x0A;
-    pub const BIND: u8 = 0x0B;
-    pub const DROP: u8 = 0x0C;
-    pub const ERROR: u8 = 0x0D;
-    pub const SLIDE: u8 = 0x0E;
-    pub const FIXPOINT: u8 = 0x0F;
-    pub const INT_CONST: u8 = 0x10;
-    pub const ADD: u8 = 0x11;
-    pub const SUB: u8 = 0x12;
-    pub const MUL: u8 = 0x13;
-    pub const DIV: u8 = 0x14;
-    pub const NEG: u8 = 0x15;
-    pub const EQ: u8 = 0x16;
-    pub const LT: u8 = 0x17;
-    pub const BYTES_CONST: u8 = 0x18;
-    pub const BYTES_LEN: u8 = 0x19;
-    pub const BYTES_GET: u8 = 0x1A;
-    pub const BYTES_EQ: u8 = 0x1B;
-    pub const BYTES_CONCAT: u8 = 0x1C;
-    pub const CALL_DIRECT: u8 = 0x1D;
-    pub const TAIL_CALL_DIRECT: u8 = 0x1E;
-    pub const FOREIGN_FN_CONST: u8 = 0x1F;
-    pub const LOAD_CAPTURE: u8 = 0x20;
-    pub const LOAD2: u8 = 0x21;
-    pub const LOAD3: u8 = 0x22;
-}
-
-/// Binary encoding helpers used by the compiler to emit bytecode,
-/// and by the runtime to decode it.
 ///
 /// Instruction layouts:
-///   PACK      tag:u8  arity:u8
-///   UNPACK    n:u8
-///   LOAD      idx:u8
-///   GLOBAL    idx:u16le
-///   CLOSURE   code_addr:u16le  arity:u8  n_captures:u8
-///   CALL
-///   TAIL_CALL
-///   RET
-///   MATCH     n_cases:u8  [tag:u8 arity:u8 offset:u16le]*n
-///   JMP       offset:u16le
-///   BIND      n:u8
-///   DROP      n:u8
-///   ERROR
-///   CALL_DIRECT       code_addr:u16le  n_args:u8
-///   TAIL_CALL_DIRECT  code_addr:u16le  n_args:u8
-///   FOREIGN_FN_CONST  idx:u16le  arity:u8
-///   LOAD_CAPTURE      idx:u8
+///
+///   ── Stack / locals ──
+///   LOAD              idx:u8
 ///   LOAD2             idx_a:u8  idx_b:u8
 ///   LOAD3             idx_a:u8  idx_b:u8  idx_c:u8
+///   LOAD_CAPTURE      idx:u8
+///   GLOBAL            idx:u16le
+///   DROP              n:u8
+///   SLIDE             n:u8
+///
+///   ── Data ──
+///   PACK              tag:u8  arity:u8
+///   UNPACK            n:u8
+///   BIND              n:u8
+///   FUNCTION          idx:u16le  arity:u8
+///   CLOSURE           code_addr:u16le  arity:u8  n_captures:u8
+///   FIXPOINT          cap_idx:u8
+///
+///   ── Control flow ──
+///   CALL
+///   TAIL_CALL
+///   CALL_DIRECT       code_addr:u16le  n_args:u8
+///   TAIL_CALL_DIRECT  code_addr:u16le  n_args:u8
+///   RET
+///   MATCH             n_cases:u8  [tag:u8 arity:u8 offset:u16le]*n
+///   JMP               offset:u16le
+///   ERROR
+///
+///   ── Integer ──
+///   INT               value:i32le
+///   ADD
+///   SUB
+///   MUL
+///   DIV
+///   NEG
+///   EQ
+///   LT
+///
+///   ── Bytes ──
+///   BYTES             len:u8  data:[u8]
+///   BYTES_LEN
+///   BYTES_GET
+///   BYTES_EQ
+///   BYTES_CONCAT
+pub mod op {
+    // Stack / locals
+    pub const LOAD: u8 = 0x01;
+    pub const LOAD2: u8 = 0x02;
+    pub const LOAD3: u8 = 0x03;
+    pub const LOAD_CAPTURE: u8 = 0x04;
+    pub const GLOBAL: u8 = 0x05;
+    pub const DROP: u8 = 0x06;
+    pub const SLIDE: u8 = 0x07;
+
+    // Data
+    pub const PACK: u8 = 0x08;
+    pub const UNPACK: u8 = 0x09;
+    pub const BIND: u8 = 0x0A;
+    pub const FUNCTION: u8 = 0x0B;
+    pub const CLOSURE: u8 = 0x0C;
+    pub const FIXPOINT: u8 = 0x0D;
+
+    // Control flow
+    pub const CALL: u8 = 0x0E;
+    pub const TAIL_CALL: u8 = 0x0F;
+    pub const CALL_DIRECT: u8 = 0x10;
+    pub const TAIL_CALL_DIRECT: u8 = 0x11;
+    pub const RET: u8 = 0x12;
+    pub const MATCH: u8 = 0x13;
+    pub const JMP: u8 = 0x14;
+    pub const ERROR: u8 = 0x15;
+
+    // Integer
+    pub const INT: u8 = 0x16;
+    pub const ADD: u8 = 0x17;
+    pub const SUB: u8 = 0x18;
+    pub const MUL: u8 = 0x19;
+    pub const DIV: u8 = 0x1A;
+    pub const NEG: u8 = 0x1B;
+    pub const EQ: u8 = 0x1C;
+    pub const LT: u8 = 0x1D;
+
+    // Bytes
+    pub const BYTES: u8 = 0x1E;
+    pub const BYTES_LEN: u8 = 0x1F;
+    pub const BYTES_GET: u8 = 0x20;
+    pub const BYTES_EQ: u8 = 0x21;
+    pub const BYTES_CONCAT: u8 = 0x22;
+}
 
 pub struct Emitter {
     pub code: Vec<u8>,
@@ -104,6 +135,42 @@ impl Emitter {
         self.pending_loads.clear();
     }
 
+    // Stack / locals
+
+    pub fn emit_load(&mut self, idx: u8) {
+        self.pending_loads.push(idx);
+        if self.pending_loads.len() >= 3 {
+            self.flush_pending_loads();
+        }
+    }
+
+    pub fn emit_load_capture(&mut self, idx: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::LOAD_CAPTURE);
+        self.code.push(idx);
+    }
+
+    pub fn emit_global(&mut self, idx: u16) {
+        self.flush_pending_loads();
+        self.code.push(op::GLOBAL);
+        self.code.extend_from_slice(&idx.to_le_bytes());
+    }
+
+    pub fn emit_drop(&mut self, n: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::DROP);
+        self.code.push(n);
+    }
+
+    /// Keep top-of-stack, remove n items below it.
+    pub fn emit_slide(&mut self, n: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::SLIDE);
+        self.code.push(n);
+    }
+
+    // Data
+
     pub fn emit_pack(&mut self, tag: u8, arity: u8) {
         self.flush_pending_loads();
         self.code.push(op::PACK);
@@ -117,17 +184,17 @@ impl Emitter {
         self.code.push(n);
     }
 
-    pub fn emit_load(&mut self, idx: u8) {
-        self.pending_loads.push(idx);
-        if self.pending_loads.len() >= 3 {
-            self.flush_pending_loads();
-        }
+    pub fn emit_bind(&mut self, n: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::BIND);
+        self.code.push(n);
     }
 
-    pub fn emit_global(&mut self, idx: u16) {
+    pub fn emit_function(&mut self, idx: u16, arity: u8) {
         self.flush_pending_loads();
-        self.code.push(op::GLOBAL);
+        self.code.push(op::FUNCTION);
         self.code.extend_from_slice(&idx.to_le_bytes());
+        self.code.push(arity);
     }
 
     pub fn emit_closure(&mut self, code_addr: u16, arity: u8, n_captures: u8) {
@@ -138,6 +205,17 @@ impl Emitter {
         self.code.push(n_captures);
     }
 
+    /// FIXPOINT(cap_idx): Peek TOS (a closure), patch its
+    /// capture[cap_idx] to point to itself, overwrite the slot
+    /// 1 below TOS with the closure, then pop TOS.
+    pub fn emit_fixpoint(&mut self, cap_idx: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::FIXPOINT);
+        self.code.push(cap_idx);
+    }
+
+    // Control flow
+
     pub fn emit_call(&mut self) {
         self.flush_pending_loads();
         self.code.push(op::CALL);
@@ -146,6 +224,20 @@ impl Emitter {
     pub fn emit_tail_call(&mut self) {
         self.flush_pending_loads();
         self.code.push(op::TAIL_CALL);
+    }
+
+    pub fn emit_call_direct(&mut self, code_addr: u16, n_args: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::CALL_DIRECT);
+        self.code.extend_from_slice(&code_addr.to_le_bytes());
+        self.code.push(n_args);
+    }
+
+    pub fn emit_tail_call_direct(&mut self, code_addr: u16, n_args: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::TAIL_CALL_DIRECT);
+        self.code.extend_from_slice(&code_addr.to_le_bytes());
+        self.code.push(n_args);
     }
 
     pub fn emit_ret(&mut self) {
@@ -192,42 +284,16 @@ impl Emitter {
         self.code[pos..pos + 2].copy_from_slice(&val.to_le_bytes());
     }
 
-    pub fn emit_bind(&mut self, n: u8) {
-        self.flush_pending_loads();
-        self.code.push(op::BIND);
-        self.code.push(n);
-    }
-
-    pub fn emit_drop(&mut self, n: u8) {
-        self.flush_pending_loads();
-        self.code.push(op::DROP);
-        self.code.push(n);
-    }
-
-    /// Keep top-of-stack, remove n items below it.
-    pub fn emit_slide(&mut self, n: u8) {
-        self.flush_pending_loads();
-        self.code.push(op::SLIDE);
-        self.code.push(n);
-    }
-
     pub fn emit_error(&mut self) {
         self.flush_pending_loads();
         self.code.push(op::ERROR);
     }
 
-    /// FIXPOINT(cap_idx): Peek TOS (a closure), patch its
-    /// capture[cap_idx] to point to itself, overwrite the slot
-    /// 1 below TOS with the closure, then pop TOS.
-    pub fn emit_fixpoint(&mut self, cap_idx: u8) {
-        self.flush_pending_loads();
-        self.code.push(op::FIXPOINT);
-        self.code.push(cap_idx);
-    }
+    // Integer
 
-    pub fn emit_int_const(&mut self, n: i32) {
+    pub fn emit_int(&mut self, n: i32) {
         self.flush_pending_loads();
-        self.code.push(op::INT_CONST);
+        self.code.push(op::INT);
         self.code.extend_from_slice(&n.to_le_bytes());
     }
 
@@ -239,9 +305,11 @@ impl Emitter {
     pub fn emit_eq(&mut self)  { self.flush_pending_loads(); self.code.push(op::EQ); }
     pub fn emit_lt(&mut self)  { self.flush_pending_loads(); self.code.push(op::LT); }
 
-    pub fn emit_bytes_const(&mut self, data: &[u8]) {
+    // Bytes
+
+    pub fn emit_bytes(&mut self, data: &[u8]) {
         self.flush_pending_loads();
-        self.code.push(op::BYTES_CONST);
+        self.code.push(op::BYTES);
         self.code.push(data.len() as u8);
         self.code.extend_from_slice(data);
     }
@@ -249,37 +317,10 @@ impl Emitter {
     pub fn emit_bytes_get(&mut self)    { self.flush_pending_loads(); self.code.push(op::BYTES_GET); }
     pub fn emit_bytes_eq(&mut self)     { self.flush_pending_loads(); self.code.push(op::BYTES_EQ); }
     pub fn emit_bytes_concat(&mut self) { self.flush_pending_loads(); self.code.push(op::BYTES_CONCAT); }
-
-    pub fn emit_call_direct(&mut self, code_addr: u16, n_args: u8) {
-        self.flush_pending_loads();
-        self.code.push(op::CALL_DIRECT);
-        self.code.extend_from_slice(&code_addr.to_le_bytes());
-        self.code.push(n_args);
-    }
-
-    pub fn emit_tail_call_direct(&mut self, code_addr: u16, n_args: u8) {
-        self.flush_pending_loads();
-        self.code.push(op::TAIL_CALL_DIRECT);
-        self.code.extend_from_slice(&code_addr.to_le_bytes());
-        self.code.push(n_args);
-    }
-
-    pub fn emit_foreign_fn_const(&mut self, idx: u16, arity: u8) {
-        self.flush_pending_loads();
-        self.code.push(op::FOREIGN_FN_CONST);
-        self.code.extend_from_slice(&idx.to_le_bytes());
-        self.code.push(arity);
-    }
-
-    pub fn emit_load_capture(&mut self, idx: u8) {
-        self.flush_pending_loads();
-        self.code.push(op::LOAD_CAPTURE);
-        self.code.push(idx);
-    }
 }
 
 pub const MAGIC: [u8; 4] = *b"SMRQ";
-pub const BYTECODE_VERSION: u16 = 1;
+pub const BYTECODE_VERSION: u16 = 2;
 
 /// Header prepended to the compiled bytecode blob.
 /// All offsets are byte offsets into the code section.
