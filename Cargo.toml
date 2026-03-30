@@ -1,3 +1,4 @@
 [workspace]
 members = ["crates/shamrocq", "crates/shamrocq-compiler", "crates/shamrocq-reader"]
+exclude = ["examples/baremetal"]
 resolver = "2"
