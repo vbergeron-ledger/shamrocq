@@ -128,8 +128,15 @@ struct ScanResult {
 
 // ── header parsing ────────────────────────────────────────────────────────────
 
-fn parse_header(blob: &[u8]) -> Result<(Vec<Global>, Vec<String>, usize), String> {
-    let mut cursor = 0usize;
+fn parse_header(blob: &[u8]) -> Result<(u16, Vec<Global>, Vec<String>, usize), String> {
+    if blob.len() < 8 {
+        return Err("blob too short for header".to_string());
+    }
+    if &blob[0..4] != b"SMRQ" {
+        return Err("bad magic: expected SMRQ header".to_string());
+    }
+    let version = read_u16le(blob, 4)?;
+    let mut cursor = 6usize;
 
     let n_globals = read_u16le(blob, cursor)? as usize;
     cursor += 2;
@@ -157,7 +164,7 @@ fn parse_header(blob: &[u8]) -> Result<(Vec<Global>, Vec<String>, usize), String
     let (tag_names, tag_end) = try_parse_tags(blob, cursor);
     cursor = tag_end;
 
-    Ok((globals, tag_names, cursor))
+    Ok((version, globals, tag_names, cursor))
 }
 
 /// Attempt to parse an embedded tag table at `start`. Returns the parsed names
@@ -412,15 +419,16 @@ fn build_labels(
 // ── disassembly (pass 2) ─────────────────────────────────────────────────────
 
 fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
-    let (globals, tag_names, header_len) = parse_header(blob)?;
+    let (version, globals, tag_names, header_len) = parse_header(blob)?;
     let code = &blob[header_len..];
 
     println!("{}=== shamrocq bytecode ==={}", c.bld, c.rst);
     println!(
-        "blob: {} bytes  header: {} bytes  code: {} bytes  tags: {}",
+        "blob: {} bytes  header: {} bytes  code: {} bytes  version: {}  tags: {}",
         blob.len(),
         header_len,
         code.len(),
+        version,
         if tag_names.is_empty() { "none".to_string() } else { format!("{} embedded", tag_names.len()) },
     );
     println!();

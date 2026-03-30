@@ -276,6 +276,9 @@ impl Emitter {
     }
 }
 
+pub const MAGIC: [u8; 4] = *b"SMRQ";
+pub const BYTECODE_VERSION: u16 = 1;
+
 /// Header prepended to the compiled bytecode blob.
 /// All offsets are byte offsets into the code section.
 #[derive(Debug, Clone)]
@@ -290,6 +293,8 @@ pub struct ProgramHeader {
 
 impl ProgramHeader {
     pub fn serialize(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&MAGIC);
+        out.extend_from_slice(&BYTECODE_VERSION.to_le_bytes());
         out.extend_from_slice(&self.n_globals.to_le_bytes());
         for (name, offset) in &self.globals {
             let name_bytes = name.as_bytes();
@@ -308,7 +313,8 @@ impl ProgramHeader {
     }
 
     pub fn serialized_len(&self) -> usize {
-        2 + self.globals.iter().map(|(n, _)| 1 + n.len() + 2).sum::<usize>()
+        4 + 2  // magic + version
+          + 2 + self.globals.iter().map(|(n, _)| 1 + n.len() + 2).sum::<usize>()
           + 2 + self.tags.iter().map(|n| 1 + n.len()).sum::<usize>()
     }
 }

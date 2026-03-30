@@ -42,11 +42,16 @@ mod op {
     pub const LOAD3: u8 = 0x22;
 }
 
+const MAGIC: [u8; 4] = *b"SMRQ";
+const MIN_BYTECODE_VERSION: u16 = 1;
+const MAX_BYTECODE_VERSION: u16 = 1;
+
 #[derive(Debug)]
 pub enum VmError {
     Oom,
     MatchFailure { scrutinee_tag: u8, pc: usize },
     InvalidBytecode,
+    UnsupportedVersion { version: u16 },
     NotAClosure,
     StackOverflow,
     IndexOutOfBounds,
@@ -72,11 +77,18 @@ pub struct Program<'a> {
 
 impl<'a> Program<'a> {
     pub fn from_blob(blob: &'a [u8]) -> Result<Self, VmError> {
-        if blob.len() < 2 {
+        if blob.len() < 4 + 2 + 2 {
             return Err(VmError::InvalidBytecode);
         }
-        let n_globals = u16::from_le_bytes([blob[0], blob[1]]);
-        let mut pos = 2usize;
+        if blob[0..4] != MAGIC {
+            return Err(VmError::InvalidBytecode);
+        }
+        let version = u16::from_le_bytes([blob[4], blob[5]]);
+        if version < MIN_BYTECODE_VERSION || version > MAX_BYTECODE_VERSION {
+            return Err(VmError::UnsupportedVersion { version });
+        }
+        let n_globals = u16::from_le_bytes([blob[6], blob[7]]);
+        let mut pos = 8usize;
         for _ in 0..n_globals {
             if pos >= blob.len() {
                 return Err(VmError::InvalidBytecode);
@@ -99,7 +111,7 @@ impl<'a> Program<'a> {
         }
         Ok(Program {
             n_globals,
-            global_names: &blob[2..globals_end],
+            global_names: &blob[8..globals_end],
             code: &blob[pos..],
         })
     }
