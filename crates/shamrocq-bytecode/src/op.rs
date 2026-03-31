@@ -23,10 +23,14 @@
 ///   CLOSURE           code_addr:u16le  arity:u8  n_captures:u8
 ///   FIXPOINT          cap_idx:u8
 ///
-///   -- Control flow --
-///   CALL
-///   TAIL_CALL
+///   -- Control flow (calls) --
+///   CALL1
+///   TAIL_CALL1
+///   CALL_N            code_addr:u16le  n_args:u8
+///   TAIL_CALL_N       code_addr:u16le  n_args:u8
 ///   RET
+///
+///   -- Control flow (branching) --
 ///   MATCH             base_tag:u8  n_entries:u8  [arity:u8 offset:u16le]*n
 ///   JMP               offset:u16le
 ///   ERROR
@@ -65,10 +69,14 @@ pub const FUNCTION: u8 = 0x0B;
 pub const CLOSURE: u8 = 0x0C;
 pub const FIXPOINT: u8 = 0x0D;
 
-// Control flow
-pub const CALL: u8 = 0x0E;
-pub const TAIL_CALL: u8 = 0x0F;
+// Control flow (calls)
+pub const CALL1: u8 = 0x0E;
+pub const TAIL_CALL1: u8 = 0x0F;
+pub const CALL_N: u8 = 0x10;
+pub const TAIL_CALL_N: u8 = 0x11;
 pub const RET: u8 = 0x12;
+
+// Control flow (branching)
 pub const MATCH: u8 = 0x13;
 pub const JMP: u8 = 0x14;
 pub const ERROR: u8 = 0x15;

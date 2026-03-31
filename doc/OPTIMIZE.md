@@ -1,192 +1,260 @@
-I've read everything. Here's the harsh critique.
+# Performance analysis and roadmap
 
----
+## Known issues
 
-## The Verdict
+### 1. Fully Curried Calling Convention
 
-You've built a clean, compact, `no_std` Scheme VM and that's respectable. But the performance story is, frankly, dire. The architecture has several structural problems that compound into what is essentially a "pay the maximum cost at every level" interpreter. Let me break it down.
-
----
-
-## 1. The Killer: Fully Curried Calling Convention
-
-This is your single biggest performance disaster. Every multi-argument call goes through the curried pipeline:
-
-```254:262:crates/shamrocq-compiler/src/codegen.rs
-            RExpr::App(func, arg) => {
-                self.compile_expr(func, ctx, false);
-                self.compile_expr(arg, ctx, false);
-                if tail {
-                    self.emitter.emit_tail_call();
-                } else {
-                    self.emitter.emit_call();
-                }
-            }
-```
-
-A call like `(f a b c)` desugars to `App(App(App(f, a), b), c)` which emits **three** CALL instructions. The first two create `Application` objects on the heap via `alloc_application` / `extend_application`. The third one finally realizes arity is saturated, then **copies all the args back from heap to stack**, and jumps. For a 3-arg function, you're doing:
+Every multi-argument call goes through the curried pipeline. A call like
+`(f a b c)` desugars to `App(App(App(f, a), b), c)` which emits three CALL
+instructions. The first two create `Application` objects on the heap via
+`alloc_application` / `extend_application`. The third one saturates the
+arity, copies all the args back from heap to stack, and jumps. For a
+3-argument function this means:
 
 - 2 heap allocations (never reclaimed)
 - 2 header constructions with bitfield packing
 - 1 full copy of accumulated args from heap to stack
-- 3 opcode dispatches through the 130-line CALL handler
+- 3 opcode dispatches through the CALL handler
 
-This means calling a function costs O(arity^2) work instead of O(arity). And you already know this -- the arity analysis pass is a skeleton:
+Calling a function costs O(arity^2) work instead of O(arity). The arity
+analysis pass (`p07_arity_analysis`) computes arities but doesn't use them
+yet.
 
-```19:25:crates/shamrocq-compiler/src/pass/p07_arity_analysis.rs
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine> {
-        for d in &defs {
-            let _arity = lambda_arity(&d.body);
-        }
-        defs
-    }
-```
+### 2. No GC
 
-It computes arities and throws them away. The comment literally says "prerequisite for future multi-argument APPLY/GRAB instructions." That future is now.
+The bump allocator never frees anything. Every partial application, every
+intermediate constructor, every `extend_application` copy is permanent.
+For Coq-extracted code with deep recursion and data structures, this leads
+to OOM.
 
-## 2. No GC, No Reclamation, No Hope for Long-Running Programs
+### 3. Dispatch Overhead
 
-The bump allocator never frees anything:
+The main loop is a `match opcode { ... }` with 30+ arms. The CPU branch
+predictor sees a single indirect branch site for all opcodes, so it cannot
+predict the next handler. Each iteration also checks `pc >= code.len()`.
 
-```33:41:crates/shamrocq/src/arena.rs
-    pub fn alloc(&mut self, words: usize) -> Result<usize, ArenaError> {
-        let base = Self::align4(self.heap_top);
-        let end = base + words * 4;
-        if end > self.stack_bot {
-            return Err(ArenaError::OutOfMemory);
-        }
-        self.heap_top = end;
-        Ok(base)
-    }
-```
+### 4. Bounds Checking on Every Memory Access
 
-Every partial application, every intermediate constructor, every `extend_application` copy -- all of it is permanent. `extend_application` is particularly wasteful: it allocates a fresh object and copies the old one every time an argument is added. For Coq-extracted code with deep pattern matching and recursive data structures, you will OOM quickly. The bump allocator is fine for a prototype, but it makes the curried calling convention even more punishing since every intermediate PAP is garbage that can never be collected.
+`read_word` goes through `try_into().unwrap()` with slice bounds checks.
+`stack_push` checks `heap_top + 4` every time. These are safe but costly
+in the hot loop.
 
-## 3. MATCH Is a Linear Scan
+### 5. CALL / TAIL_CALL Code Duplication
 
-```577:609:crates/shamrocq/src/vm.rs
-                op::MATCH => {
-                    let n_cases = code[pc] as usize;
-                    // ...
-                    for i in 0..n_cases {
-                        let entry = table_start + i * 4;
-                        let case_tag = code[entry];
-                        // ...
-                        if case_tag == scrutinee_tag {
-                            // ...
-                            break;
-                        }
-                    }
-                }
-```
+CALL and TAIL_CALL share ~80% of their logic copy-pasted (~180 lines).
+This bloats the instruction cache footprint of `eval_with_frame`.
 
-O(n) linear scan on every match. Coq-extracted code is *drowning* in pattern matching. An `Inductive` with 20 constructors means 20 comparisons in the worst case, every time. Tags are `u8` (0..255), so a 256-entry jump table or even a sorted binary search would be trivial. For a VM that runs Coq extractions, this is inexcusable.
+## Done
 
-## 4. Dispatch Overhead: Classic Switch Threading
+- **Jump-table MATCH** (bytecode v3) -- MATCH uses a dense jump table
+  indexed by `scrutinee_tag - base_tag`. O(1) dispatch instead of O(n)
+  linear scan. Entry format is 3 bytes (arity + offset) instead of 4
+  (tag + arity + offset). Gap entries point to an ERROR instruction.
 
-The main loop is a `match opcode { ... }` with 30+ arms. On each iteration:
-
-1. Bounds check: `pc >= code.len()`
-2. Fetch opcode byte
-3. Jump through match/jump-table
-4. Execute handler
-5. Loop back to step 1
-
-This is the slowest form of bytecode dispatch. The CPU branch predictor sees a single indirect branch site for all opcodes, so it can never predict the next handler. Every instruction pays the full pipeline flush cost. On ARM Cortex-M (your target), this is especially painful since the pipeline is short but branch misprediction still costs ~3-10 cycles per instruction.
-
-## 5. Bounds Checking on Every Memory Access
-
-`read_word` uses `try_into().unwrap()`:
-
-```280:282:crates/shamrocq/src/arena.rs
-    fn read_word(&self, offset: usize) -> u32 {
-        u32::from_le_bytes(self.buf[offset..offset + 4].try_into().unwrap())
-    }
-```
-
-Every word read goes through: slice bounds check, `try_into` which checks length == 4, `unwrap` which has a panic path. `stack_push` checks `heap_top + 4` every time. The `pc >= code.len()` check runs on every instruction. You're paying for safety on every single operation in the hot loop.
-
-## 6. Massive Code Duplication: CALL vs TAIL_CALL
-
-`CALL` (lines 374-451) and `TAIL_CALL` (lines 453-557) share ~80% of their logic, copy-pasted. That's 180 lines of nearly-identical code in the hottest function in your program. This isn't just a maintenance problem -- it bloats the instruction cache footprint of `eval_with_frame`. On your Cortex-M targets with tiny I-caches (often 4-16KB), this matters a lot. The whole `eval_with_frame` function is ~490 lines of generated machine code competing for cache space.
-
-## 7. record_heap / record_stack Noise
-
-You call `self.record_heap()` and `self.record_stack()` after almost every operation. Without the `stats` feature, these are empty functions that the compiler *should* optimize away -- but the call sites add pressure on the optimizer and make the hot loop harder to read. More importantly, **with stats enabled** (your benchmark mode), you're computing `heap_used()` and `stack_used()` and doing a max-comparison on every single stack push and heap allocation. That's measuring overhead becoming part of what you measure.
-
-## 8. O(n^2) Global Loading
-
-```82:99:crates/shamrocq/src/vm.rs
-    pub fn global_code_offset(&self, idx: u16) -> Result<u16, VmError> {
-        let mut pos = 0usize;
-        for i in 0..self.n_globals {
-            // ... linear scan ...
-        }
-        Err(VmError::InvalidBytecode)
-    }
-```
-
-`load_program` calls `global_code_offset(i)` for each global, and each call is O(n). Total: O(n^2). With 64 globals this is negligible, but it's sloppy.
+- **CALL_N / TAIL_CALL_N -- Phase 1** (bytecode v4) -- When the compiler
+  sees `App^N(Global(g), args)` where N equals the known arity of g, it
+  emits all N arguments followed by `CALL_N flat_entry N`. The VM jumps
+  directly to a flat entry point compiled with `frame_depth = arity`,
+  bypassing the curried closure chain entirely. No PAP allocations, no
+  intermediate CALL1 dispatches. Curried CALL1 remains for partial
+  application, unknown callees, and arity-1 functions. CALL/TAIL_CALL
+  renamed to CALL1/TAIL_CALL1.
 
 ---
 
-## Performance Roadmap
+## Roadmap
 
-### Tier 0: Biggest Bang for Zero Architectural Change
+### Tier 0: Low Effort
 
 | Change | Impact | Effort |
 |--------|--------|--------|
-| **Jump-table MATCH** -- index a 256-byte table by tag instead of linear scan | High (matches are everywhere in Coq code) | Low |
-| **Remove `pc` bounds check** from the hot loop (trust bytecode, validate at load time) | Medium (saves a branch per instruction) | Low |
-| **`unsafe` aligned reads** for `read_word`/`write_word` on LE targets behind a `cfg` | Medium (eliminates bounds check + slice copy per memory op) | Low |
+| **Remove `pc` bounds check** from the hot loop (trust bytecode, validate at load time) | Medium | Low |
+| **`unsafe` aligned reads** for `read_word`/`write_word` on LE targets behind a `cfg` | Medium | Low |
 | **Factor CALL/TAIL_CALL** into shared helpers to shrink icache pressure | Medium | Low |
 
-### Tier 1: Multi-Arg Calling Convention (The Big Win)
+### Tier 1: Multi-Arg Calling Convention (CALL N / GRAB K)
 
-This is the highest-ROI change by far:
+Highest-ROI change. Modeled on the ZAM (Zinc Abstract Machine) used by
+OCaml, adapted to shamrocq's stack-based arena.
 
-1. **Finish arity analysis** -- propagate known arities to call sites.
-2. **Add `CALLN arity` / `TAIL_CALLN arity` opcodes** -- when the compiler knows a call site matches the callee's arity exactly, emit a single multi-arg call that pushes all args, sets up the frame, and jumps. Zero PAP allocations.
-3. **Add `GRAB n` instruction** at function entry -- if the function receives fewer args than `n`, auto-build a PAP. This is how OCaml's ZAM and Coq's CertiCoq handle it.
-4. **Over-application handling** -- when too many args are provided, call with the right arity, then apply the result to the remaining args.
+#### Current situation
 
-Expected impact: eliminates ~90%+ of heap allocations for well-typed Coq-extracted code where arities are statically known. This alone could be a 3-10x speedup.
+Frame header is 12 bytes: `[saved_fb, saved_pc, saved_env]`. CALL pops
+one arg and one func, checks arity, either enters the callee or builds a
+PAP on the heap. Multi-arg calls chain through N separate CALLs with
+O(arity) heap allocations.
+
+#### Proposed instructions
+
+**`CALL N`** (caller side): N arguments and the callee are on the stack.
+
+```
+stack before:  [..., func, arg_0, arg_1, ..., arg_{N-1}]
+```
+
+CALL N saves arg_0..arg_{N-1}, pops them and func, pushes the return
+frame `[saved_fb, saved_pc, saved_env, N]` (16 bytes -- the extra word
+stores the arg count so the callee can inspect it), sets frame_base,
+re-pushes the N args, and jumps to the callee's code address.
+
+**`TAIL_CALL N`**: same but reuses the current frame (truncate to
+frame_base, re-push args, jump). No frame growth.
+
+**`GRAB K`** (callee side): placed at the entry of a function that
+expects K arguments. Reads N (the arg count provided by CALL N) from the
+frame header and dispatches:
+
+| Condition | Behavior |
+|-----------|----------|
+| N == K (exact) | Continue into the body. All K args are locals 0..K-1. |
+| N < K (under-applied) | Build a PAP capturing the closure + the N args already provided. Push the PAP as the result and execute RET. The function body is never entered. |
+| N > K (over-applied) | Consume K args as locals. Store the remaining N-K as "extra args" in the frame. The body runs normally; RET handles the rest (see below). |
+
+#### RET behavior in each case
+
+**Exact application (N == K):** No change. RET pops the result, restores
+the saved frame header, pushes the result in the caller's frame.
+
+**Under-application (N < K):** GRAB itself builds the PAP and falls
+through to RET. RET sees a normal return -- it doesn't know or care that
+GRAB short-circuited. No change to RET.
+
+**Over-application (N > K):** The function body produces a result that is
+itself callable. RET checks the extra-args count in the frame header. If
+extra_args > 0, instead of returning to the caller, RET treats the result
+as a new callee: it pops the K consumed args, and re-enters CALL with the
+remaining extra args still on the stack. In practice this means RET
+becomes:
+
+```
+result = pop()
+extra = frame_header.extra_args
+if extra == 0:
+    normal return (restore caller frame, push result)
+else:
+    // The extra args are still below frame_base.
+    // Re-dispatch: apply result to the next arg.
+    // Either loop (if result has arity 1) or GRAB again.
+```
+
+This is the only place where RET gets more complex. The extra-args count
+can be stored in the upper 8 bits of the saved_pc word (which only uses
+16 bits for the code address), avoiding a 4th frame-header word:
+
+```
+frame header:  [saved_fb:u32, (extra:u8 << 16 | saved_pc:u16):u32, saved_env:u32]
+```
+
+This keeps the frame header at 12 bytes.
+
+#### Incrementality
+
+The design is deliberately layered so each phase is independently useful:
+
+**Phase 1 -- Exact-arity known calls (compiler only, no GRAB).**
+When the compiler sees `App^N(Global(g), args)` and N equals the known
+arity of g, it emits all N args followed by `CALL N addr`. The VM handler
+pushes the frame and jumps. No GRAB instruction needed -- the compiler
+guarantees N == K. Under-application and over-application fall back to the
+existing curried CALL. This alone eliminates the vast majority of PAP
+allocations in Coq-extracted code, since most calls are to known globals
+at exact arity.
+
+**Phase 2 -- GRAB for unknown callees.**
+Add GRAB K at the entry of all multi-arity functions. CALL N now works
+with closures and higher-order calls, not just known globals. GRAB handles
+under-application (builds PAP) so the curried CALL path is no longer
+needed for that case.
+
+**Phase 3 -- Over-application in RET.**
+Extend the frame header with extra_args. RET checks extra_args and
+re-dispatches. This handles cases like `(compose f g x)` where compose
+has arity 2 but is called with 3 args.
+
+Phase 1 is the high-value target. Phases 2 and 3 are correctness
+refinements for edge cases in higher-order code.
+
+#### Compiler changes per phase
+
+Phase 1 requires:
+- Propagate arity info from `p07_arity_analysis` to codegen.
+- In `compile_expr` for `App`, walk the App spine to detect
+  `App^N(Global(g), ...)` where N == arity(g).
+- Emit `LOAD arg_0; ...; LOAD arg_{N-1}; CALL_N code_addr N` instead
+  of the chain of `LOAD func; LOAD arg; CALL` pairs.
+- Emit a flat body for multi-arity globals (frame_depth = arity, no
+  captures, de Bruijn indices map directly to LOAD slots).
+- Non-matching call sites are unchanged.
+
+Phase 2 requires:
+- Emit GRAB K at the start of every multi-arity function body.
+- CALL N works with any callable, not just known code addresses.
+
+Phase 3 requires:
+- Pack extra_args into the frame header.
+- Modify RET to check and re-dispatch.
+
+#### Foreign functions and CALL N
+
+The current `ForeignFn` signature is:
+
+```rust
+pub type ForeignFn = fn(&mut Vm<'_>, Value) -> Result<Value, VmError>;
+```
+
+This takes a single curried argument. Three options for multi-arg foreign
+calls:
+
+**Option A: Keep curried FFI (recommended for Phase 1).** Foreign
+functions remain arity-1 from the VM's perspective. If Scheme code calls
+a multi-arg foreign function, it goes through the normal curried path.
+Foreign functions are rare and cheap (they run native Rust), so the
+overhead is negligible. No FFI change needed.
+
+**Option B: Stack-based FFI.** Change the signature to
+`fn(&mut Vm<'_>, n_args: u8) -> Result<Value, VmError>`. The function
+reads its arguments from the VM stack. This is more powerful but changes
+the host API and requires all existing foreign functions to be rewritten.
+
+**Option C: Variadic FFI.** Keep the single-arg signature for arity-1
+functions. Add a second registration path for multi-arg functions that
+takes `fn(&mut Vm<'_>, &[Value]) -> Result<Value, VmError>`. The VM
+dispatches based on the registered arity. This is the most flexible but
+adds complexity.
+
+Option A is the right default. Foreign functions are glue code (I/O,
+hardware access) that typically take one boxed argument. If profiling
+later shows a hot multi-arg foreign function, Option B can be added as a
+separate optimization without affecting the core calling convention.
 
 ### Tier 2: Interpreter Dispatch
 
 | Change | Impact | Effort |
 |--------|--------|--------|
-| **Tail-call threaded dispatch** -- each opcode handler tail-calls the next, giving the CPU per-opcode branch prediction | High (30-50% speedup on dispatch-bound code) | Medium |
-| **Superinstructions** -- fuse common sequences (LOAD+CALL, LOAD+LOAD+CALL, PACK(0)+RET, MATCH+BIND, LOAD+MATCH) | Medium | Medium |
-| **Inline caching for MATCH** -- speculate on the most recent tag | Medium for hot loops | Medium |
-
-For Rust specifically, tail-call threading can be done with `musttail` (nightly) or by restructuring as a function-pointer table where each handler returns the next handler to call.
+| **Tail-call threaded dispatch** | High | Medium |
+| **Superinstructions** (LOAD+CALL, PACK(0)+RET, MATCH+BIND, etc.) | Medium | Medium |
 
 ### Tier 3: Memory Management
 
 | Change | Impact | Effort |
 |--------|--------|--------|
-| **Arena reset points** -- allow "sub-arena" regions that can be bulk-freed (e.g., per-call-frame temporary allocations) | High for long runs | Medium |
-| **Copying/compacting GC** -- semi-space collector is simple and fits your single-buffer model (split buffer into two semi-spaces) | Critical for real workloads | High |
-| **Stack-allocate small constructors** -- 0-2 field constructors used and discarded within a single frame don't need heap allocation | Medium | Medium |
+| **Arena reset points** -- bulk-free per-call-frame temporaries | High for long runs | Medium |
+| **Copying/compacting GC** -- semi-space collector fits the single-buffer model | Critical for real workloads | High |
 
 ### Tier 4: Aspirational
 
 | Change | Impact | Effort |
 |--------|--------|--------|
-| **Register-based bytecode** instead of stack-based -- fewer push/pop, more direct operand addressing | High (20-40% fewer instructions) | Very High |
-| **Template JIT** for hot paths -- even a trivial "copy native code snippets" JIT gives 2-5x | Very High | Very High |
-| **NaN-boxing** on 64-bit host targets for testing/development (not embedded) | Medium | Medium |
+| **Register-based bytecode** | High | Very High |
+| **Template JIT** | Very High | Very High |
+| **NaN-boxing** on 64-bit host targets | Medium | Medium |
 
 ---
 
-## Recommended Priority Order
+## Priority order
 
-1. **Multi-arg calls** (Tier 1) -- this dominates everything else. Your arity analysis pass is already there waiting.
-2. **Jump-table MATCH** (Tier 0) -- trivial to implement, immediate payoff.
-3. **Unsafe word access** (Tier 0) -- remove the bounds-check tax from every memory operation.
-4. **Factor CALL/TAIL_CALL** (Tier 0) -- reduce icache pressure, also makes Tier 1 easier.
-5. **Arena reset points or simple GC** (Tier 3) -- without this, nothing else matters for real programs because you'll OOM.
-6. **Threaded dispatch** (Tier 2) -- once the calling convention is fixed, dispatch overhead becomes the next bottleneck.
-
-The multi-arg calling convention is the single change that would transform this from "proof of concept" to "competitive embedded VM." Everything else is polish by comparison.
+1. **Multi-arg calls** (Tier 1)
+2. **Unsafe word access** (Tier 0)
+3. **Factor CALL/TAIL_CALL** (Tier 0)
+4. **Arena reset points or GC** (Tier 3)
+5. **Threaded dispatch** (Tier 2)

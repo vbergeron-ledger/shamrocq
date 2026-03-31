@@ -1,5 +1,6 @@
 use crate::bytecode::{Emitter, ProgramHeader};
 use crate::desugar::PrimOp;
+use crate::pass::p07_arity_analysis::lambda_arity;
 use crate::resolve::{RDefine, RExpr, RMatchCase};
 
 pub struct CompiledProgram {
@@ -81,6 +82,8 @@ struct Compiler {
     emitter: Emitter,
     deferred: Vec<DeferredLambda>,
     last_closure_captures: Option<Vec<u8>>,
+    global_arities: Vec<u8>,
+    flat_patches: Vec<(usize, u16)>,
 }
 
 enum LoadTarget {
@@ -149,10 +152,14 @@ impl Ctx {
 }
 
 pub fn compile_program(defs: &[RDefine]) -> CompiledProgram {
+    let global_arities: Vec<u8> = defs.iter().map(|d| lambda_arity(&d.body)).collect();
+
     let mut c = Compiler {
         emitter: Emitter::new(),
         deferred: Vec::new(),
         last_closure_captures: None,
+        global_arities,
+        flat_patches: Vec::new(),
     };
 
     let mut global_offsets: Vec<(String, u16)> = Vec::new();
@@ -165,6 +172,15 @@ pub fn compile_program(defs: &[RDefine]) -> CompiledProgram {
     }
 
     c.emit_deferred();
+
+    let flat_addrs = c.emit_flat_bodies(defs);
+    c.emit_deferred();
+
+    for &(pos, global_idx) in &c.flat_patches {
+        if let Some(addr) = flat_addrs[global_idx as usize] {
+            c.emitter.patch_u16(pos, addr);
+        }
+    }
 
     let foreign_fns: Vec<(String, u16)> = defs
         .iter()
@@ -252,12 +268,14 @@ impl Compiler {
             }
 
             RExpr::App(func, arg) => {
-                self.compile_expr(func, ctx, false);
-                self.compile_expr(arg, ctx, false);
-                if tail {
-                    self.emitter.emit_tail_call();
-                } else {
-                    self.emitter.emit_call();
+                if !self.try_compile_flat_call(expr, ctx, tail) {
+                    self.compile_expr(func, ctx, false);
+                    self.compile_expr(arg, ctx, false);
+                    if tail {
+                        self.emitter.emit_tail_call1();
+                    } else {
+                        self.emitter.emit_call1();
+                    }
                 }
             }
 
@@ -441,6 +459,66 @@ impl Compiler {
             }
         }
     }
+
+    fn try_compile_flat_call(&mut self, expr: &RExpr, ctx: &mut Ctx, tail: bool) -> bool {
+        let (global_idx, args) = match try_flatten_app(expr) {
+            Some(x) => x,
+            None => return false,
+        };
+        let arity = match self.global_arities.get(global_idx as usize) {
+            Some(&a) if a >= 2 && args.len() == a as usize => a,
+            _ => return false,
+        };
+        for a in &args {
+            self.compile_expr(a, ctx, false);
+        }
+        if tail {
+            let pos = self.emitter.emit_tail_call_n_placeholder(arity);
+            self.flat_patches.push((pos, global_idx));
+        } else {
+            let pos = self.emitter.emit_call_n_placeholder(arity);
+            self.flat_patches.push((pos, global_idx));
+        }
+        true
+    }
+
+    fn emit_flat_bodies(&mut self, defs: &[RDefine]) -> Vec<Option<u16>> {
+        let mut flat_addrs: Vec<Option<u16>> = vec![None; defs.len()];
+        for (i, def) in defs.iter().enumerate() {
+            let arity = self.global_arities[i];
+            if arity < 2 {
+                continue;
+            }
+            let mut inner = &def.body;
+            for _ in 0..arity {
+                if let RExpr::Lambda(body) = inner {
+                    inner = body;
+                } else {
+                    break;
+                }
+            }
+            let addr = self.emitter.pos() as u16;
+            flat_addrs[i] = Some(addr);
+            let mut ctx = Ctx::for_closure(vec![], arity as usize);
+            self.compile_expr(inner, &mut ctx, true);
+        }
+        flat_addrs
+    }
+}
+
+fn try_flatten_app<'a>(expr: &'a RExpr) -> Option<(u16, Vec<&'a RExpr>)> {
+    let mut args = Vec::new();
+    let mut cur = expr;
+    while let RExpr::App(func, arg) = cur {
+        args.push(arg.as_ref());
+        cur = func;
+    }
+    if let RExpr::Global(idx) = cur {
+        args.reverse();
+        Some((*idx, args))
+    } else {
+        None
+    }
 }
 
 /// Collect de Bruijn indices that are free in `expr` (>= `bound`),
@@ -554,13 +632,24 @@ mod tests {
     }
 
     #[test]
-    fn compile_partial_app_uses_call() {
+    fn compile_partial_app_uses_call1() {
         use crate::bytecode::op;
         let prog = compile(
             "(define f (lambdas (a b) (+ a b)))\n\
              (define g (lambda (x) (f x)))",
         );
-        let has_call = prog.code.windows(1).any(|w| w[0] == op::CALL || w[0] == op::TAIL_CALL);
-        assert!(has_call, "partial application should use CALL");
+        let has_call = prog.code.windows(1).any(|w| w[0] == op::CALL1 || w[0] == op::TAIL_CALL1);
+        assert!(has_call, "partial application should use CALL1");
+    }
+
+    #[test]
+    fn compile_exact_arity_uses_call_n() {
+        use crate::bytecode::op;
+        let prog = compile(
+            "(define f (lambdas (a b) (+ a b)))\n\
+             (define g (lambda (x) (f x x)))",
+        );
+        let has_call_n = prog.code.windows(1).any(|w| w[0] == op::CALL_N || w[0] == op::TAIL_CALL_N);
+        assert!(has_call_n, "exact-arity call to known global should use CALL_N");
     }
 }

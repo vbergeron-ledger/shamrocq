@@ -121,14 +121,48 @@ impl Emitter {
 
     // Control flow
 
-    pub fn emit_call(&mut self) {
+    pub fn emit_call1(&mut self) {
         self.flush_pending_loads();
-        self.code.push(op::CALL);
+        self.code.push(op::CALL1);
     }
 
-    pub fn emit_tail_call(&mut self) {
+    pub fn emit_tail_call1(&mut self) {
         self.flush_pending_loads();
-        self.code.push(op::TAIL_CALL);
+        self.code.push(op::TAIL_CALL1);
+    }
+
+    pub fn emit_call_n(&mut self, code_addr: u16, n_args: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::CALL_N);
+        self.code.extend_from_slice(&code_addr.to_le_bytes());
+        self.code.push(n_args);
+    }
+
+    /// Emits CALL_N with a placeholder code_addr. Returns position of the u16.
+    pub fn emit_call_n_placeholder(&mut self, n_args: u8) -> usize {
+        self.flush_pending_loads();
+        self.code.push(op::CALL_N);
+        let pos = self.code.len();
+        self.code.extend_from_slice(&[0u8; 2]);
+        self.code.push(n_args);
+        pos
+    }
+
+    pub fn emit_tail_call_n(&mut self, code_addr: u16, n_args: u8) {
+        self.flush_pending_loads();
+        self.code.push(op::TAIL_CALL_N);
+        self.code.extend_from_slice(&code_addr.to_le_bytes());
+        self.code.push(n_args);
+    }
+
+    /// Emits TAIL_CALL_N with a placeholder code_addr. Returns position of the u16.
+    pub fn emit_tail_call_n_placeholder(&mut self, n_args: u8) -> usize {
+        self.flush_pending_loads();
+        self.code.push(op::TAIL_CALL_N);
+        let pos = self.code.len();
+        self.code.extend_from_slice(&[0u8; 2]);
+        self.code.push(n_args);
+        pos
     }
 
     pub fn emit_ret(&mut self) {

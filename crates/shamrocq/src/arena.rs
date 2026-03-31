@@ -292,6 +292,18 @@ impl<'a> Arena<'a> {
     pub fn free(&self) -> usize {
         self.stack_bot - self.heap_top
     }
+
+    pub fn buf_len(&self) -> usize {
+        self.buf.len()
+    }
+
+    pub fn heap_data(&self) -> &[u8] {
+        &self.buf[..self.heap_top]
+    }
+
+    pub fn stack_data(&self) -> &[u8] {
+        &self.buf[self.stack_bot..]
+    }
 }
 
 const PAYLOAD_21_RAW: u32 = 0x001F_FFFF;

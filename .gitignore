@@ -1,3 +1,4 @@
 /target
 /out
 /examples/baremetal/target
+/benchmarks/*.jsonl

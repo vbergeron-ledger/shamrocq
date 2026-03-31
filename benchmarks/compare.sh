@@ -2,38 +2,62 @@
 # Compare benchmark results across commits.
 #
 # Usage:
-#   ./benchmarks/compare.sh                    # aggregate all commits
-#   ./benchmarks/compare.sh 78f705d 4fe01ce    # compare two specific commits
+#   ./benchmarks/compare.sh *.jsonl                         # aggregate all commits across files
+#   ./benchmarks/compare.sh *.jsonl -- 78f705d 4fe01ce      # compare two commits
+#   ./benchmarks/compare.sh hash_forest.jsonl synth_list.jsonl -- 78f 4fe
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RESULTS_FILE="${RESULTS_FILE:-$SCRIPT_DIR/results.jsonl}"
 
-if [[ $# -ge 2 ]]; then
-    FILTER="WHERE commit LIKE '${1}%' OR commit LIKE '${2}%'"
-else
-    FILTER=""
+FILES=()
+COMMITS=()
+PARSING_FILES=true
+
+for arg in "$@"; do
+    if [[ "$arg" == "--" ]]; then
+        PARSING_FILES=false
+        continue
+    fi
+    if $PARSING_FILES; then
+        if [[ -f "$arg" ]]; then
+            FILES+=("$arg")
+        elif [[ -f "$SCRIPT_DIR/$arg" ]]; then
+            FILES+=("$SCRIPT_DIR/$arg")
+        elif [[ -f "$SCRIPT_DIR/$arg.jsonl" ]]; then
+            FILES+=("$SCRIPT_DIR/$arg.jsonl")
+        else
+            echo "Warning: cannot find benchmark file for '$arg'" >&2
+        fi
+    else
+        COMMITS+=("$arg")
+    fi
+done
+
+if [[ ${#FILES[@]} -eq 0 ]]; then
+    FILES=("$SCRIPT_DIR"/*.jsonl)
 fi
 
-if [[ $# -ge 2 ]]; then
+GLOB_EXPR=$(printf "'%s'," "${FILES[@]}")
+GLOB_EXPR="[${GLOB_EXPR%,}]"
+
+if [[ ${#COMMITS[@]} -ge 2 ]]; then
     duckdb -c "
     WITH data AS (
-      SELECT * FROM read_ndjson_auto('$RESULTS_FILE') $FILTER
+      SELECT * FROM read_ndjson_auto($GLOB_EXPR)
+      WHERE commit LIKE '${COMMITS[0]}%' OR commit LIKE '${COMMITS[1]}%'
     ),
-    old AS (SELECT * FROM data WHERE commit LIKE '${1}%'),
-    new AS (SELECT * FROM data WHERE commit LIKE '${2}%')
+    old AS (SELECT * FROM data WHERE commit LIKE '${COMMITS[0]}%'),
+    new AS (SELECT * FROM data WHERE commit LIKE '${COMMITS[1]}%')
     SELECT
       COALESCE(o.test, n.test) AS test,
       o.exec_instruction_count AS old_insns,
       n.exec_instruction_count AS new_insns,
       n.exec_instruction_count - o.exec_instruction_count AS Δinsns,
+      printf('%.1f%%', 100.0*(n.exec_instruction_count - o.exec_instruction_count)/o.exec_instruction_count) AS \"%insns\",
       o.peak_heap_bytes AS old_heap,
       n.peak_heap_bytes AS new_heap,
       n.peak_heap_bytes - o.peak_heap_bytes AS Δheap,
-      o.peak_stack_bytes AS old_stack,
-      n.peak_stack_bytes AS new_stack,
-      n.peak_stack_bytes - o.peak_stack_bytes AS Δstack,
       o.alloc_bytes_total AS old_alloc,
       n.alloc_bytes_total AS new_alloc,
       n.alloc_bytes_total - o.alloc_bytes_total AS Δalloc,
@@ -43,7 +67,7 @@ if [[ $# -ge 2 ]]; then
 else
     duckdb -c "
     WITH data AS (
-      SELECT * FROM read_ndjson_auto('$RESULTS_FILE')
+      SELECT * FROM read_ndjson_auto($GLOB_EXPR)
     )
     SELECT
       commit[:7] AS commit,

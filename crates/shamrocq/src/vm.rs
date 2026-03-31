@@ -5,7 +5,7 @@ use crate::stats::Stats;
 use crate::stats::MemSnapshot;
 use crate::value::Value;
 use shamrocq_bytecode::op;
-use shamrocq_bytecode::{MAGIC, BYTECODE_VERSION};
+use shamrocq_bytecode::{MAGIC, BYTECODE_VERSION, DUMP_MAGIC, DUMP_VERSION};
 
 const MIN_BYTECODE_VERSION: u16 = BYTECODE_VERSION;
 const MAX_BYTECODE_VERSION: u16 = BYTECODE_VERSION;
@@ -160,6 +160,56 @@ impl<'buf> Vm<'buf> {
             stack_bytes: self.arena.stack_used(),
             free_bytes: self.arena.free(),
         }
+    }
+
+    /// Write a binary dump of the VM state into `dst`.
+    ///
+    /// Format (all little-endian):
+    ///   magic       4 bytes   "SMRD"
+    ///   version     u16       dump format version
+    ///   buf_len     u32       total arena buffer size
+    ///   heap_top    u32       heap high-water mark
+    ///   stack_bot   u32       stack bottom position
+    ///   n_globals   u16       number of active globals
+    ///   globals     n_globals * u32   raw Value words
+    ///   heap        heap_top bytes
+    ///   stack       (buf_len - stack_bot) bytes
+    ///
+    /// Returns the number of bytes written, or `None` if `dst` is too small.
+    pub fn dump_into(&self, dst: &mut [u8]) -> Option<usize> {
+        let heap = self.arena.heap_data();
+        let stack = self.arena.stack_data();
+        let header = 4 + 2 + 4 + 4 + 4 + 2 + (self.n_globals as usize) * 4;
+        let total = header + heap.len() + stack.len();
+        if dst.len() < total {
+            return None;
+        }
+        let mut pos = 0;
+
+        dst[pos..pos + 4].copy_from_slice(&DUMP_MAGIC);
+        pos += 4;
+        dst[pos..pos + 2].copy_from_slice(&DUMP_VERSION.to_le_bytes());
+        pos += 2;
+        dst[pos..pos + 4].copy_from_slice(&(self.arena.buf_len() as u32).to_le_bytes());
+        pos += 4;
+        dst[pos..pos + 4].copy_from_slice(&(self.arena.heap_used() as u32).to_le_bytes());
+        pos += 4;
+        dst[pos..pos + 4].copy_from_slice(&(self.arena.stack_bot_pos() as u32).to_le_bytes());
+        pos += 4;
+        dst[pos..pos + 2].copy_from_slice(&self.n_globals.to_le_bytes());
+        pos += 2;
+
+        for i in 0..self.n_globals as usize {
+            dst[pos..pos + 4].copy_from_slice(&self.globals[i].raw().to_le_bytes());
+            pos += 4;
+        }
+
+        dst[pos..pos + heap.len()].copy_from_slice(heap);
+        pos += heap.len();
+        dst[pos..pos + stack.len()].copy_from_slice(stack);
+        pos += stack.len();
+
+        Some(pos)
     }
 
     pub fn load_program(&mut self, prog: &Program<'buf>) -> Result<(), VmError> {
@@ -371,7 +421,7 @@ impl<'buf> Vm<'buf> {
                     }
                 }
 
-                op::CALL => {
+                op::CALL1 => {
                     let arg = self.arena.stack_pop();
                     let func = self.arena.stack_pop();
                     if !func.is_callable() {
@@ -450,7 +500,7 @@ impl<'buf> Vm<'buf> {
                     }
                 }
 
-                op::TAIL_CALL => {
+                op::TAIL_CALL1 => {
                     let arg = self.arena.stack_pop();
                     let func = self.arena.stack_pop();
                     if !func.is_callable() {
@@ -554,6 +604,54 @@ impl<'buf> Vm<'buf> {
                             env = saved_env;
                         }
                     }
+                }
+
+                op::CALL_N => {
+                    let code_addr = u16::from_le_bytes([code[pc], code[pc + 1]]) as usize;
+                    let n_args = code[pc + 2] as usize;
+                    pc += 3;
+
+                    let mut tmp = [Value::ctor(0, 0); 16];
+                    for i in (0..n_args).rev() {
+                        tmp[i] = self.arena.stack_pop();
+                    }
+
+                    self.arena.stack_push(env)?;
+                    self.arena.stack_push(Value::from_raw(pc as u32))?;
+                    self.arena.stack_push(Value::from_raw(frame_base as u32))?;
+                    call_depth += 1;
+                    stat!(self, exec_call_count += 1);
+                    stat!(self, exec_peak_call_depth = max call_depth as u32);
+
+                    frame_base = self.arena.stack_bot_pos();
+                    for i in 0..n_args {
+                        self.arena.stack_push(tmp[i])?;
+                    }
+                    self.record_stack();
+
+                    env = Value::ctor(0, 0);
+                    pc = code_addr;
+                }
+
+                op::TAIL_CALL_N => {
+                    let code_addr = u16::from_le_bytes([code[pc], code[pc + 1]]) as usize;
+                    let n_args = code[pc + 2] as usize;
+
+                    let mut tmp = [Value::ctor(0, 0); 16];
+                    for i in (0..n_args).rev() {
+                        tmp[i] = self.arena.stack_pop();
+                    }
+
+                    self.arena.set_stack_bot_pos(frame_base);
+                    stat!(self, exec_tail_call_count += 1);
+
+                    for i in 0..n_args {
+                        self.arena.stack_push(tmp[i])?;
+                    }
+                    self.record_stack();
+
+                    env = Value::ctor(0, 0);
+                    pc = code_addr;
                 }
 
                 op::RET => {
