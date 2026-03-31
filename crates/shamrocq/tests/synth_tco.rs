@@ -24,7 +24,7 @@ fn compile_inline(src: &str) -> (Vec<u8>, std::collections::HashMap<String, u16>
 }
 
 /// Simple tail-recursive countdown. Without TCO this would need 100_000
-/// call frames, far exceeding MAX_CALL_DEPTH (256).
+/// call frames, far exceeding available arena memory.
 #[test]
 fn tco_simple_tail_recursion() {
     let src = r#"
