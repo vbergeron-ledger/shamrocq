@@ -297,32 +297,6 @@ Lambda bodies are not emitted inline.  Instead:
 This means all lambda code appears after the global initializers in the
 bytecode stream.
 
-### Known-arity direct calls
-
-When the compiler detects a fully-applied call to a known multi-arity global
-— i.e., `App^N(Global(g), args)` where N equals the global's lambda-chain
-depth — it emits `CALL_DIRECT` (or `TAIL_CALL_DIRECT` in tail position)
-instead of the usual chain of `CALL` instructions.
-
-The optimization works in three phases:
-
-1. **Arity computation** — before codegen, `lambda_arity` counts the depth of
-   each global's `Lambda` chain.
-2. **Call site detection** — `try_unfold_known_call` walks the `App` spine to
-   match fully-applied known globals.  When matched, all arguments are
-   compiled onto the stack, and a `CALL_DIRECT` with a placeholder address is
-   emitted.
-3. **Flat body compilation** — after all globals and their deferred lambdas
-   are compiled, a second "flat" entry point is compiled for each
-   multi-arity global.  This flat body is the innermost lambda's body
-   compiled with a flat frame context (`frame_depth = arity`, no captures).
-   The `CALL_DIRECT` placeholders are then patched with the flat body
-   addresses.
-
-The de Bruijn indices in the innermost body naturally map to a flat frame
-`[arg_0, arg_1, ..., arg_{N-1}]` without re-indexing.  Partial applications
-(fewer args than arity) fall through to the existing curried code path.
-
 ### Output
 
 `CompiledProgram.serialize()` produces the final blob: the header

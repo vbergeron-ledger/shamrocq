@@ -27,7 +27,7 @@
 ///   CALL
 ///   TAIL_CALL
 ///   RET
-///   MATCH             n_cases:u8  [tag:u8 arity:u8 offset:u16le]*n
+///   MATCH             base_tag:u8  n_entries:u8  [arity:u8 offset:u16le]*n
 ///   JMP               offset:u16le
 ///   ERROR
 ///

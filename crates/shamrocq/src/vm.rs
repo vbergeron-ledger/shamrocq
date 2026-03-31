@@ -575,37 +575,31 @@ impl<'buf> Vm<'buf> {
                 }
 
                 op::MATCH => {
-                    let n_cases = code[pc] as usize;
-                    pc += 1;
+                    let base_tag = code[pc] as usize;
+                    let n_entries = code[pc + 1] as usize;
+                    pc += 2;
                     let table_start = pc;
-                    pc += n_cases * 4;
+                    pc += n_entries * 3;
 
                     let scrutinee = self.arena.stack_pop();
                     let scrutinee_tag = scrutinee.tag();
                     stat!(self, exec_match_count += 1);
 
-                    let mut matched = false;
-                    for i in 0..n_cases {
-                        let entry = table_start + i * 4;
-                        let case_tag = code[entry];
-                        let case_arity = code[entry + 1] as usize;
-                        let case_offset =
-                            u16::from_le_bytes([code[entry + 2], code[entry + 3]]) as usize;
-
-                        if case_tag == scrutinee_tag {
-                            if case_arity > 0 {
-                                self.arena.stack_push(scrutinee)?;
-                                self.record_stack();
-                            }
-                            pc = case_offset;
-                            matched = true;
-                            break;
-                        }
-                    }
-
-                    if !matched {
+                    let idx = (scrutinee_tag as usize).wrapping_sub(base_tag);
+                    if idx >= n_entries {
                         return Err(VmError::MatchFailure { scrutinee_tag, pc });
                     }
+
+                    let entry = table_start + idx * 3;
+                    let case_arity = code[entry] as usize;
+                    let case_offset =
+                        u16::from_le_bytes([code[entry + 1], code[entry + 2]]) as usize;
+
+                    if case_arity > 0 {
+                        self.arena.stack_push(scrutinee)?;
+                        self.record_stack();
+                    }
+                    pc = case_offset;
                 }
 
                 op::JMP => {

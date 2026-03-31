@@ -242,14 +242,16 @@ call stack and push the result in the caller's frame.
 #### `MATCH` (0x13)
 
 ```
-13 n_cases:u8
-   [tag:u8 arity:u8 offset:u16le] × n_cases
+13 base_tag:u8 n_entries:u8
+   [arity:u8 offset:u16le] × n_entries
 ```
 
-Pop the scrutinee. Scan the case table for a matching tag. If `arity > 0`,
-re-push the scrutinee (for a subsequent `BIND`). Jump to `offset`.
+Pop the scrutinee. Compute `idx = scrutinee_tag - base_tag`. If `idx >=
+n_entries` → `MatchFailure`. Otherwise index into the jump table at slot
+`idx`. If `arity > 0`, re-push the scrutinee (for a subsequent `BIND`).
+Jump to `offset`.
 
-If no case matches → `MatchFailure`.
+Gap entries (tags in range but not matched) point to an `ERROR` instruction.
 
 #### `JMP` (0x14)
 
@@ -353,10 +355,8 @@ with `BytesOverflow` if the combined length exceeds 255.
 | `FIXPOINT` | `0x0D` | `cap_idx:u8` | 2 |
 | `CALL` | `0x0E` | — | 1 |
 | `TAIL_CALL` | `0x0F` | — | 1 |
-| `CALL_DIRECT` | `0x10` | `code_addr:u16le n_args:u8` | 4 |
-| `TAIL_CALL_DIRECT` | `0x11` | `code_addr:u16le n_args:u8` | 4 |
 | `RET` | `0x12` | — | 1 |
-| `MATCH` | `0x13` | `n:u8 [tag:u8 arity:u8 off:u16le]*n` | 2+4n |
+| `MATCH` | `0x13` | `base_tag:u8 n:u8 [arity:u8 off:u16le]*n` | 3+3n |
 | `JMP` | `0x14` | `offset:u16le` | 3 |
 | `ERROR` | `0x15` | — | 1 |
 | `INT` | `0x16` | `value:i32le` | 5 |

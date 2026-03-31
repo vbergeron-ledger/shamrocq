@@ -191,9 +191,10 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
             op::TAIL_CALL => {}
             op::RET => {}
             op::MATCH => {
-                let n_cases = code[pc] as usize;
+                pc += 1; // base_tag
+                let n_entries = code[pc] as usize;
                 pc += 1;
-                pc += n_cases * 4;
+                pc += n_entries * 3;
             }
             op::JMP => { pc += 2; }
             op::ERROR => {}
@@ -516,15 +517,16 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
                 instr!(instr_pc, "RET");
             }
             op::MATCH => {
-                let n_cases = read_u8(code, pc)? as usize;
-                pc += 1;
+                let base_tag = read_u8(code, pc)?;
+                let n_entries = read_u8(code, pc + 1)? as usize;
+                pc += 2;
                 let saved = bind_depth;
-                instr!(instr_pc, "MATCH", "{} cases:", n_cases);
-                for _i in 0..n_cases {
-                    let tag = read_u8(code, pc)?;
-                    let arity = read_u8(code, pc + 1)?;
-                    let offset = read_u16le(code, pc + 2)?;
-                    pc += 4;
+                instr!(instr_pc, "MATCH", "base_tag={} {} entries:", base_tag, n_entries);
+                for i in 0..n_entries {
+                    let tag = base_tag + i as u8;
+                    let arity = read_u8(code, pc)?;
+                    let offset = read_u16le(code, pc + 1)?;
+                    pc += 3;
                     let tag_str = fmt_tag(tag, &tag_names, c);
                     let bl = branch_name(tag, &tag_names);
                     println!(

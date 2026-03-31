@@ -378,15 +378,20 @@ impl Compiler {
             return;
         }
 
-        let n = cases.len() as u8;
-        let table_start = self.emitter.emit_match_header(n);
+        let base_tag = cases.iter().map(|c| c.tag).min().unwrap();
+        let max_tag = cases.iter().map(|c| c.tag).max().unwrap();
+        let n_entries = max_tag - base_tag + 1;
+        let has_gaps = (n_entries as usize) > cases.len();
+
+        let table_start = self.emitter.emit_match_header(base_tag, n_entries);
 
         let mut jmp_patches = Vec::new();
 
         for (i, case) in cases.iter().enumerate() {
             let case_offset = self.emitter.pos() as u16;
+            let slot = (case.tag - base_tag) as usize;
             self.emitter
-                .patch_match_case(table_start, i, case.tag, case.arity, case_offset);
+                .patch_match_entry(table_start, slot, case.arity, case_offset);
 
             if case.arity > 0 {
                 self.emitter.emit_bind(case.arity);
@@ -405,6 +410,16 @@ impl Compiler {
             if !tail && i < cases.len() - 1 {
                 let jmp_pos = self.emitter.emit_jmp_placeholder();
                 jmp_patches.push(jmp_pos);
+            }
+        }
+
+        if has_gaps {
+            let error_pos = self.emitter.pos() as u16;
+            self.emitter.emit_error();
+            for slot in 0..n_entries as usize {
+                if self.emitter.match_entry_is_sentinel(table_start, slot) {
+                    self.emitter.patch_match_entry(table_start, slot, 0, error_pos);
+                }
             }
         }
 

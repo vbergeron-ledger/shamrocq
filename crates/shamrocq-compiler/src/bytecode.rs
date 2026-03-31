@@ -136,24 +136,32 @@ impl Emitter {
         self.code.push(op::RET);
     }
 
-    /// Emits a MATCH header. Returns the position of the case table
-    /// so callers can patch jump offsets after emitting branches.
-    pub fn emit_match_header(&mut self, n_cases: u8) -> usize {
+    /// Emits a MATCH jump-table header. Returns the position of the table
+    /// so callers can patch entries after emitting branches.
+    ///
+    /// Entries are initialized with sentinel offset 0xFFFF. The caller must
+    /// patch each real case via `patch_match_entry`.
+    pub fn emit_match_header(&mut self, base_tag: u8, n_entries: u8) -> usize {
         self.flush_pending_loads();
         self.code.push(op::MATCH);
-        self.code.push(n_cases);
+        self.code.push(base_tag);
+        self.code.push(n_entries);
         let table_start = self.code.len();
-        for _ in 0..n_cases {
-            self.code.extend_from_slice(&[0u8; 4]); // tag:u8 arity:u8 offset:u16le
+        for _ in 0..n_entries {
+            self.code.extend_from_slice(&[0x00, 0xFF, 0xFF]);
         }
         table_start
     }
 
-    pub fn patch_match_case(&mut self, table_start: usize, case_idx: usize, tag: u8, arity: u8, offset: u16) {
-        let pos = table_start + case_idx * 4;
-        self.code[pos] = tag;
-        self.code[pos + 1] = arity;
-        self.code[pos + 2..pos + 4].copy_from_slice(&offset.to_le_bytes());
+    pub fn patch_match_entry(&mut self, table_start: usize, slot: usize, arity: u8, offset: u16) {
+        let pos = table_start + slot * 3;
+        self.code[pos] = arity;
+        self.code[pos + 1..pos + 3].copy_from_slice(&offset.to_le_bytes());
+    }
+
+    pub fn match_entry_is_sentinel(&self, table_start: usize, slot: usize) -> bool {
+        let pos = table_start + slot * 3;
+        self.code[pos + 1] == 0xFF && self.code[pos + 2] == 0xFF
     }
 
     pub fn emit_jmp(&mut self, offset: u16) {
