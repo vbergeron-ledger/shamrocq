@@ -369,29 +369,48 @@ fn desugar_quote(sexp: &Sexp) -> Result<Expr, String> {
     }
 }
 
+fn is_ctor_tag(s: &str) -> bool {
+    s.parse::<i32>().is_err()
+}
+
 /// `(Tag ,expr1 ,expr2) -> Ctor("Tag", [expr1, expr2])
 /// `(Tag) -> Ctor("Tag", [])
+/// `(EXPR ,e1 ...) where head is not a ctor tag -> application with unquotes unwrapped
 fn desugar_quasiquote(sexp: &Sexp) -> Result<Expr, String> {
     match sexp {
         Sexp::Atom(s) => Ok(Expr::Ctor(s.clone(), Vec::new())),
         Sexp::List(items) if items.is_empty() => Ok(Expr::Ctor("Nil".to_string(), Vec::new())),
         Sexp::List(items) => {
-            let tag = items[0]
-                .as_atom()
-                .ok_or("quasiquote list head must be atom")?
-                .to_string();
-            let mut fields = Vec::new();
-            for item in &items[1..] {
-                match item {
-                    Sexp::List(unq) if unq.len() == 2 && unq[0].as_atom() == Some("unquote") => {
-                        fields.push(desugar_expr(&unq[1])?);
+            match items[0].as_atom() {
+                Some(tag) if is_ctor_tag(tag) => {
+                    let tag = tag.to_string();
+                    let mut fields = Vec::new();
+                    for item in &items[1..] {
+                        match item {
+                            Sexp::List(unq) if unq.len() == 2 && unq[0].as_atom() == Some("unquote") => {
+                                fields.push(desugar_expr(&unq[1])?);
+                            }
+                            other => {
+                                fields.push(desugar_quasiquote(other)?);
+                            }
+                        }
                     }
-                    other => {
-                        fields.push(desugar_quasiquote(other)?);
+                    Ok(Expr::Ctor(tag, fields))
+                }
+                _ => {
+                    let parts: Vec<Sexp> = items.iter().map(|item| match item {
+                        Sexp::List(unq) if unq.len() == 2 && unq[0].as_atom() == Some("unquote") => {
+                            unq[1].clone()
+                        }
+                        other => other.clone(),
+                    }).collect();
+                    if parts.len() == 1 {
+                        desugar_expr(&parts[0])
+                    } else {
+                        desugar_application(&parts)
                     }
                 }
             }
-            Ok(Expr::Ctor(tag, fields))
         }
     }
 }
@@ -494,6 +513,56 @@ mod tests {
         let defs = desugar(r#"(load "macros_extr.scm") (define x (lambda (a) a))"#);
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "x");
+    }
+
+    #[test]
+    fn desugar_quasiquote_int_head() {
+        // `(0) — Rocq extraction of nat O
+        let defs = desugar("(define z (lambda (x) `(0)))");
+        assert_eq!(defs.len(), 1);
+        match &defs[0].body {
+            Expr::Lambda(_, body) => {
+                assert_eq!(body.as_ref(), &Expr::Int(0));
+            }
+            other => panic!("expected Lambda, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn desugar_quasiquote_lambda_head() {
+        // `((lambda (n) (+ n 1)) ,x) — Rocq extraction of nat S
+        let defs = desugar("(define s (lambda (x) `((lambda (n) (+ n 1)) ,x)))");
+        assert_eq!(defs.len(), 1);
+        match &defs[0].body {
+            Expr::Lambda(_, body) => match body.as_ref() {
+                Expr::App(f, _arg) => match f.as_ref() {
+                    Expr::Lambda(param, _) => assert_eq!(param, "n"),
+                    other => panic!("expected Lambda, got {:?}", other),
+                },
+                other => panic!("expected App, got {:?}", other),
+            },
+            other => panic!("expected Lambda, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn desugar_quasiquote_nested_nat() {
+        // `((lambda (n) (+ n 1)) ,`(0)) = S O = 1
+        let defs = desugar("(define one (lambda (x) `((lambda (n) (+ n 1)) ,`(0))))");
+        assert_eq!(defs.len(), 1);
+        match &defs[0].body {
+            Expr::Lambda(_, body) => match body.as_ref() {
+                Expr::App(f, arg) => {
+                    match f.as_ref() {
+                        Expr::Lambda(param, _) => assert_eq!(param, "n"),
+                        other => panic!("expected Lambda, got {:?}", other),
+                    }
+                    assert_eq!(arg.as_ref(), &Expr::Int(0));
+                }
+                other => panic!("expected App, got {:?}", other),
+            },
+            other => panic!("expected Lambda, got {:?}", other),
+        }
     }
 
     #[test]

@@ -1,0 +1,22 @@
+[package]
+name = "shamrocq-baremetal-rbtree"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+shamrocq = { path = "../../crates/shamrocq" }
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+cortex-m-semihosting = "0.5"
+panic-halt = "1.0"
+
+[build-dependencies]
+shamrocq-compiler = { path = "../../crates/shamrocq-compiler" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true

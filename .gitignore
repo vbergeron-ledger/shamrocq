@@ -1,4 +1,7 @@
 /target
 /out
-/examples/baremetal/target
+/examples/*/target
+/rocq-projects/*/_build
 /benchmarks/*.jsonl
+/bindings.rs
+/bytecode.bin
