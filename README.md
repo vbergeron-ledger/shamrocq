@@ -115,14 +115,6 @@ assert_eq!(result.tag(), tags::FALSE);
 See [`examples/baremetal/`](examples/baremetal/) for a complete STM32
 firmware example with FFI, list manipulation, and semihosting output.
 
-### In-tree development
-
-Within this repo, enabling the `integration` feature compiles all `.scm` files
-under `scheme/` via `build.rs` and embeds the result, so the generated `funcs`
-and `ctors` modules are available directly from the `shamrocq` crate.
-This feature is **not** enabled by default — downstream users bring their own
-compiled bytecode via the CLI.
-
 ## Footprint
 
 Compiled sizes (release, `thumbv7em-none-eabihf`):
@@ -134,10 +126,6 @@ Compiled sizes (release, `thumbv7em-none-eabihf`):
 
 ## Optional features
 
-- **`integration`** — compiles the in-tree `scheme/` files via `build.rs` and
-  embeds the bytecode, `funcs`, and `ctors` modules. Only needed for running
-  the repo's own integration tests; downstream users compile their own Scheme
-  via the CLI.
 - **`stats`** — enables `vm.stats` and `vm.mem_snapshot()` for tracking
   peak heap/stack usage, allocation counts, instruction counts, call depth,
   and heap reclamation statistics.
@@ -145,8 +133,8 @@ Compiled sizes (release, `thumbv7em-none-eabihf`):
 ## Tests
 
 ```sh
-cargo test --features integration                  # without stats
-cargo test --features integration,stats            # with memory/execution statistics printed
+cargo test                          # without stats
+cargo test --features stats         # with memory/execution statistics printed
 ```
 
 ### Benchmarking
