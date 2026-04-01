@@ -2,6 +2,6 @@
 /out
 /examples/*/target
 /rocq-projects/*/_build
-/benchmarks/*.jsonl
 /bindings.rs
 /bytecode.bin
+/bench-results

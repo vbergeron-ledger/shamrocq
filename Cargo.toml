@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/shamrocq", "crates/shamrocq-bytecode", "crates/shamrocq-compiler", "crates/shamrocq-reader"]
+members = ["crates/shamrocq", "crates/shamrocq-bytecode", "crates/shamrocq-compiler", "crates/shamrocq-reader", "tools/bench"]
 exclude = [
     "examples/demo",
     "examples/sort",

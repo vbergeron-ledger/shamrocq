@@ -39,7 +39,8 @@ static mut HEAP: [u8; 40_000] = [0; 40_000];
 
 #[entry]
 fn main() -> ! {
-    let buf = unsafe { &mut HEAP };
+    let buf = unsafe { &raw mut HEAP }.cast::<[u8; 40_000]>();
+    let buf = unsafe { &mut *buf };
     let prog = Program::from_blob(BYTECODE)
         .unwrap_or_else(|e| vm_exit_err(e));
     let mut vm = Vm::new(buf);
@@ -68,6 +69,7 @@ fn main() -> ! {
     } else {
         let _ = hprintln!("unexpected result tag: {}", result.tag());
     }
+    let _ = hprintln!("{}", vm.stats);
 
     debug::exit(debug::EXIT_SUCCESS);
     loop {}
