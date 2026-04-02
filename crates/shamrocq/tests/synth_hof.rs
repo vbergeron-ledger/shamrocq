@@ -13,7 +13,7 @@ fn compose_negb_negb() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let negb = vm.global_value(c.func("negb"));
     let composed = vm.call(c.func("compose"), &[negb, negb]).unwrap();
@@ -34,7 +34,7 @@ fn flip_sub() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     // flip(sub)(2, 5) = sub(5, 2) = 3
     let sub_fn = vm.global_value(c.func("sub"));
@@ -52,7 +52,7 @@ fn const_fn_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let t = Value::nullary_ctor(c.tag("True"));
     let f = Value::nullary_ctor(c.tag("False"));
@@ -68,7 +68,7 @@ fn twice_negb() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let negb = vm.global_value(c.func("negb"));
     let double_neg = vm.call(c.func("twice"), &[negb]).unwrap();
@@ -89,7 +89,7 @@ fn apply_n_successor() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     // negb applied 4 times to True: negb^4(True) = True
     let negb = vm.global_value(c.func("negb"));

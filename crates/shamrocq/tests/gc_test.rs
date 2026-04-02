@@ -17,7 +17,7 @@ fn gc_reverse_small_heap() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 4096];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let range = vm
         .call(c.func("lrange"), &[Value::integer(0), Value::integer(100)])
@@ -36,7 +36,7 @@ fn gc_sort_small_heap() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 8192];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let result = vm
         .call(c.func("sort_seq"), &[Value::integer(20)])
@@ -55,7 +55,7 @@ fn gc_sort_medium_heap() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 16384];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let result = vm
         .call(c.func("sort_seq"), &[Value::integer(60)])

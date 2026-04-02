@@ -30,7 +30,7 @@ fn assoc_get_found() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let alist = make_assoc(&mut vm, &c, &[(1, 10), (2, 20), (3, 30)]);
     let ord = vm.global_value(c.func("nat_ord"));
@@ -51,7 +51,7 @@ fn assoc_get_not_found() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let alist = make_assoc(&mut vm, &c, &[(1, 10), (3, 30)]);
     let ord = vm.global_value(c.func("nat_ord"));
@@ -68,7 +68,7 @@ fn assoc_set_new_key() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let alist = make_assoc(&mut vm, &c, &[(1, 10)]);
     let ord = vm.global_value(c.func("nat_ord"));
@@ -99,7 +99,7 @@ fn assoc_set_overwrite() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let alist = make_assoc(&mut vm, &c, &[(1, 10), (2, 20)]);
     let ord = vm.global_value(c.func("nat_ord"));
@@ -129,7 +129,7 @@ fn assoc_remove_existing() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let alist = make_assoc(&mut vm, &c, &[(1, 10), (2, 20), (3, 30)]);
     let ord = vm.global_value(c.func("nat_ord"));
@@ -154,7 +154,7 @@ fn assoc_keys_and_values() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let alist = make_assoc(&mut vm, &c, &[(1, 10), (2, 20), (3, 30)]);
 

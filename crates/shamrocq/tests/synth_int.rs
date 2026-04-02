@@ -32,7 +32,7 @@ fn int_abs_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = c.funcs["int_abs"];
     assert_eq!(as_int(vm.call(f, &[i(-42)]).unwrap()), 42);
@@ -46,7 +46,7 @@ fn int_max_min() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let max = c.funcs["int_max"];
     let min = c.funcs["int_min"];
@@ -62,7 +62,7 @@ fn int_factorial() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = c.funcs["int_factorial"];
     assert_eq!(as_int(vm.call(f, &[i(0)]).unwrap()), 1);
@@ -78,7 +78,7 @@ fn int_sum_to() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = c.funcs["int_sum_to"];
     assert_eq!(as_int(vm.call(f, &[i(0)]).unwrap()), 0);
@@ -94,7 +94,7 @@ fn int_pow() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = c.funcs["int_pow"];
     assert_eq!(as_int(vm.call(f, &[i(2), i(0)]).unwrap()), 1);
@@ -109,7 +109,7 @@ fn int_gcd() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = c.funcs["int_gcd"];
     assert_eq!(as_int(vm.call(f, &[i(12), i(8)]).unwrap()), 4);
@@ -124,7 +124,7 @@ fn int_fib() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = c.funcs["int_fib"];
     assert_eq!(as_int(vm.call(f, &[i(0)]).unwrap()), 0);
@@ -140,7 +140,7 @@ fn int_arithmetic_expression() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     // (5! + sum(10)) * gcd(12,8) == (120 + 55) * 4 == 700
     let fact5 = as_int(vm.call(c.funcs["int_factorial"], &[i(5)]).unwrap());

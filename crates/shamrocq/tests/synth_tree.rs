@@ -23,7 +23,7 @@ fn tree_insert_and_member() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let ord = vm.global_value(c.func("nat_ord"));
     let leaf = make_leaf(&mut vm, &c);
@@ -71,7 +71,7 @@ fn tree_insert_duplicate() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let ord = vm.global_value(c.func("nat_ord"));
     let leaf = make_leaf(&mut vm, &c);
@@ -101,7 +101,7 @@ fn tree_size_and_height() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let leaf = make_leaf(&mut vm, &c);
 
@@ -130,7 +130,7 @@ fn tree_to_list_sorted() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let leaf = make_leaf(&mut vm, &c);
 

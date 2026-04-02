@@ -369,7 +369,7 @@ impl Compiler {
             }
 
             RExpr::Foreign(idx) => {
-                self.emitter.emit_function(*idx, 1);
+                self.emitter.emit_foreign(*idx, 1);
                 if tail {
                     self.emitter.emit_ret();
                 }

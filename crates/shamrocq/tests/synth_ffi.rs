@@ -48,7 +48,7 @@ fn foreign_fn_multiarg_syntax() {
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
     vm.register_foreign(0, clamp_packed);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = funcs["clamp"];
     let lo = Value::integer(0);
@@ -69,7 +69,7 @@ fn foreign_fn_direct_call() {
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
     vm.register_foreign(0, double_it);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = funcs["use-foreign"];
     let result = vm.call(f, &[Value::integer(21)]).unwrap();
@@ -89,7 +89,7 @@ fn foreign_fn_multiple() {
     let mut vm = Vm::new(&mut buf);
     vm.register_foreign(0, double_it);
     vm.register_foreign(1, negate_it);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = funcs["double-then-negate"];
     let result = vm.call(f, &[Value::integer(5)]).unwrap();
@@ -107,7 +107,7 @@ fn foreign_fn_in_tail_position() {
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
     vm.register_foreign(0, double_it);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = funcs["tail-call-foreign"];
     let result = vm.call(f, &[Value::integer(100)]).unwrap();
@@ -147,7 +147,7 @@ fn foreign_fn_compiler_assigns_indices_in_order() {
     vm.register_foreign(0, always_zero);
     vm.register_foreign(1, always_zero);
     vm.register_foreign(2, always_zero);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     // Globals 0, 1, 2 should be foreign_fn values.
     assert!(vm.global_value(0).is_foreign_fn());

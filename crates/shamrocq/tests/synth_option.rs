@@ -13,7 +13,7 @@ fn option_map_some() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let negb = vm.global_value(c.func("negb"));
     let some_true = vm.alloc_ctor(c.tag("Some"), &[Value::nullary_ctor(c.tag("True"))]).unwrap();
@@ -29,7 +29,7 @@ fn option_map_none() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let negb = vm.global_value(c.func("negb"));
     let none = Value::nullary_ctor(c.tag("None_"));
@@ -44,7 +44,7 @@ fn option_bind_some() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     // option_bind(wrap_some, Some(True)) = wrap_some(True) = Some(True)
     let wrap = vm.global_value(c.func("wrap_some"));
@@ -61,7 +61,7 @@ fn option_bind_none() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let negb = vm.global_value(c.func("negb"));
     let none = Value::nullary_ctor(c.tag("None_"));
@@ -76,7 +76,7 @@ fn option_default_some() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n5 = peano(&mut vm, c.tag("O"), c.tag("S"), 5);
     let n0 = peano(&mut vm, c.tag("O"), c.tag("S"), 0);
@@ -92,7 +92,7 @@ fn option_default_none() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = peano(&mut vm, c.tag("O"), c.tag("S"), 0);
     let none = Value::nullary_ctor(c.tag("None_"));
@@ -107,7 +107,7 @@ fn option_is_some_and_none() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let some = vm.alloc_ctor(c.tag("Some"), &[Value::nullary_ctor(c.tag("O"))]).unwrap();
     let none = Value::nullary_ctor(c.tag("None_"));

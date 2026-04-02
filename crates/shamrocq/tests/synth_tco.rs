@@ -35,7 +35,7 @@ fn tco_simple_tail_recursion() {
     let prog = Program::from_blob(&blob).unwrap();
     let mut buf = vec![0u8; 4096];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = funcs["count-down"];
     let result = vm.call(f, &[Value::integer(100_000)]).unwrap();
@@ -54,7 +54,7 @@ fn tco_accumulator() {
     let prog = Program::from_blob(&blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let f = funcs["sum-acc"];
     let result = vm.call(f, &[Value::integer(0), Value::integer(1_000)]).unwrap();
@@ -75,14 +75,14 @@ fn tco_mutual_recursion() {
     let prog = Program::from_blob(&blob).unwrap();
     let mut buf = vec![0u8; 4096];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let even = funcs["my-even"];
     let result = vm.call(even, &[Value::integer(100_000)]).unwrap();
     assert_eq!(result.tag(), shamrocq_bytecode::tags::TRUE);
 
     vm.reset();
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
     let result = vm.call(even, &[Value::integer(99_999)]).unwrap();
     assert_eq!(result.tag(), shamrocq_bytecode::tags::FALSE);
 }

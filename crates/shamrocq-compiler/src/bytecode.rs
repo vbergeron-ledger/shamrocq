@@ -98,9 +98,9 @@ impl Emitter {
         self.code.push(n);
     }
 
-    pub fn emit_function(&mut self, idx: u16, arity: u8) {
+    pub fn emit_foreign(&mut self, idx: u16, arity: u8) {
         self.flush_pending_loads();
-        self.code.push(op::FUNCTION);
+        self.code.push(op::FOREIGN);
         self.code.extend_from_slice(&idx.to_le_bytes());
         self.code.push(arity);
     }
@@ -108,7 +108,7 @@ impl Emitter {
     pub fn emit_closure(&mut self, code_addr: u16, arity: u8, n_captures: u8) {
         self.flush_pending_loads();
         if n_captures == 0 {
-            self.code.push(op::CLOSURE0);
+            self.code.push(op::FUNCTION);
             self.code.extend_from_slice(&code_addr.to_le_bytes());
             self.code.push(arity);
         } else {

@@ -1,33 +1,13 @@
-use crate::arena::{Arena, ArenaError};
+use crate::arena::Arena;
 use crate::bytes;
+use crate::program::{Program, VmError};
 use crate::stats::stat;
 #[cfg(feature = "stats")]
 use crate::stats::Stats;
 use crate::stats::MemSnapshot;
 use crate::value::Value;
 use shamrocq_bytecode::op;
-use shamrocq_bytecode::{MAGIC, BYTECODE_VERSION, DUMP_MAGIC, DUMP_VERSION};
-
-const MIN_BYTECODE_VERSION: u16 = BYTECODE_VERSION;
-const MAX_BYTECODE_VERSION: u16 = BYTECODE_VERSION;
-
-#[derive(Debug)]
-pub enum VmError {
-    Oom,
-    MatchFailure { scrutinee_tag: u8, pc: usize },
-    InvalidBytecode,
-    UnsupportedVersion { version: u16 },
-    NotAClosure,
-    IndexOutOfBounds,
-    BytesOverflow,
-    NotRegistered,
-}
-
-impl From<ArenaError> for VmError {
-    fn from(_: ArenaError) -> Self {
-        VmError::Oom
-    }
-}
+use shamrocq_bytecode::{DUMP_MAGIC, DUMP_VERSION};
 
 /// A host function callable from Scheme. Takes a single (curried) argument.
 pub type ForeignFn = fn(&mut Vm<'_>, Value) -> Result<Value, VmError>;
@@ -36,90 +16,6 @@ const MAX_FOREIGN_FNS: usize = 32;
 
 fn unregistered_foreign_fn(_: &mut Vm<'_>, _: Value) -> Result<Value, VmError> {
     Err(VmError::NotRegistered)
-}
-
-pub struct Program<'a> {
-    pub n_globals: u16,
-    pub global_names: &'a [u8],
-    pub code: &'a [u8],
-}
-
-impl<'a> Program<'a> {
-    pub fn from_blob(blob: &'a [u8]) -> Result<Self, VmError> {
-        if blob.len() < 4 + 2 + 2 {
-            return Err(VmError::InvalidBytecode);
-        }
-        if blob[0..4] != MAGIC {
-            return Err(VmError::InvalidBytecode);
-        }
-        let version = u16::from_le_bytes([blob[4], blob[5]]);
-        if version < MIN_BYTECODE_VERSION || version > MAX_BYTECODE_VERSION {
-            return Err(VmError::UnsupportedVersion { version });
-        }
-        let n_globals = u16::from_le_bytes([blob[6], blob[7]]);
-        let mut pos = 8usize;
-        for _ in 0..n_globals {
-            if pos >= blob.len() {
-                return Err(VmError::InvalidBytecode);
-            }
-            let name_len = blob[pos] as usize;
-            pos += 1 + name_len + 2;
-        }
-        let globals_end = pos;
-        if pos + 2 > blob.len() {
-            return Err(VmError::InvalidBytecode);
-        }
-        let n_tags = u16::from_le_bytes([blob[pos], blob[pos + 1]]) as usize;
-        pos += 2;
-        for _ in 0..n_tags {
-            if pos >= blob.len() {
-                return Err(VmError::InvalidBytecode);
-            }
-            let name_len = blob[pos] as usize;
-            pos += 1 + name_len;
-        }
-        Ok(Program {
-            n_globals,
-            global_names: &blob[8..globals_end],
-            code: &blob[pos..],
-        })
-    }
-
-    pub fn global_code_offset(&self, idx: u16) -> Result<u16, VmError> {
-        let mut pos = 0usize;
-        for i in 0..self.n_globals {
-            if pos >= self.global_names.len() {
-                return Err(VmError::InvalidBytecode);
-            }
-            let name_len = self.global_names[pos] as usize;
-            pos += 1 + name_len;
-            if i == idx {
-                return Ok(u16::from_le_bytes([
-                    self.global_names[pos],
-                    self.global_names[pos + 1],
-                ]));
-            }
-            pos += 2;
-        }
-        Err(VmError::InvalidBytecode)
-    }
-
-    pub fn global_index(&self, name: &str) -> Option<u16> {
-        let name_bytes = name.as_bytes();
-        let mut pos = 0usize;
-        for i in 0..self.n_globals {
-            if pos >= self.global_names.len() {
-                return None;
-            }
-            let name_len = self.global_names[pos] as usize;
-            let entry_name = &self.global_names[pos + 1..pos + 1 + name_len];
-            if entry_name == name_bytes {
-                return Some(i);
-            }
-            pos += 1 + name_len + 2;
-        }
-        None
-    }
 }
 
 const FRAME_HEADER_WORDS: usize = 3;
@@ -223,12 +119,13 @@ impl<'buf> Vm<'buf> {
         Some(pos)
     }
 
-    pub fn load_program(&mut self, prog: &Program<'buf>) -> Result<(), VmError> {
+    pub fn load(&mut self, prog: &Program<'buf>) -> Result<(), VmError> {
         self.n_globals = prog.n_globals;
         self.code = prog.code;
         for i in 0..prog.n_globals {
             let offset = prog.global_code_offset(i)?;
-            let val = self.eval(offset as usize)?;
+            let fb = self.arena.stack_bot_pos();
+            let val = self.eval(offset as usize, fb)?;
             self.globals[i as usize] = val;
         }
         Ok(())
@@ -245,7 +142,7 @@ impl<'buf> Vm<'buf> {
     pub fn apply(&mut self, mut func: Value, args: &[Value]) -> Result<Value, VmError> {
         for &arg in args {
             if !func.is_callable() {
-                return Err(VmError::NotAClosure);
+                return Err(VmError::NotCallable);
             }
 
             if func.is_foreign_fn() && func.fn_arity() == 1 {
@@ -256,7 +153,7 @@ impl<'buf> Vm<'buf> {
                 if arity == 1 {
                     let saved_pos = self.arena.stack_bot_pos();
                     self.arena.stack_push(arg)?;
-                    func = self.eval_with_frame(func.fn_addr() as usize, saved_pos)?;
+                    func = self.eval(func.fn_addr() as usize, saved_pos)?;
                 } else {
                     func = self.arena.alloc_closure(func.fn_addr(), arity, &[arg])?;
                 }
@@ -273,7 +170,7 @@ impl<'buf> Vm<'buf> {
                         self.arena.stack_push(v)?;
                     }
                     self.arena.stack_push(arg)?;
-                    func = self.eval_with_frame(code_addr as usize, saved_pos)?;
+                    func = self.eval(code_addr as usize, saved_pos)?;
                 }
             }
         }
@@ -296,32 +193,17 @@ impl<'buf> Vm<'buf> {
 
     fn try_reclaim(&mut self, result: Value, saved_heap_top: usize) {
         let current = self.arena.heap_used();
-        if current > saved_heap_top && !Self::references_heap_since(result, saved_heap_top) {
+        let refs_new_heap = result.is_reference() && result.offset() >= saved_heap_top;
+        if current > saved_heap_top && !refs_new_heap {
             stat!(self, reclaim_count += 1);
             stat!(self, reclaim_bytes_total += ((current - saved_heap_top) * 4) as u32);
             self.arena.set_heap_top(saved_heap_top);
         }
     }
 
-    fn references_heap_since(val: Value, start: usize) -> bool {
-        if !val.is_reference() {
-            return false;
-        }
-        val.offset() >= start
-    }
-
-    fn eval(&mut self, start_pc: usize) -> Result<Value, VmError> {
-        let fb = self.arena.stack_bot_pos();
-        self.eval_with_frame(start_pc, fb)
-    }
-
-    fn eval_with_frame(
-        &mut self,
-        start_pc: usize,
-        frame_base: usize,
-    ) -> Result<Value, VmError> {
+    fn eval(&mut self, pc: usize, frame_base: usize) -> Result<Value, VmError> {
         let code = self.code;
-        let mut pc = start_pc;
+        let mut pc = pc;
         let mut call_depth: usize = 0;
         let mut frame_base = frame_base;
 
@@ -415,7 +297,7 @@ impl<'buf> Vm<'buf> {
                     stat!(self, peak_stack_bytes = max self.arena.stack_used() * 4);
                 }
 
-                op::CLOSURE0 => {
+                op::FUNCTION => {
                     let code_addr = u16::from_le_bytes([code[pc], code[pc + 1]]);
                     let arity = code[pc + 2];
                     pc += 3;
@@ -489,7 +371,7 @@ impl<'buf> Vm<'buf> {
                             stat!(self, peak_stack_bytes = max self.arena.stack_used() * 4);
                         }
                     } else {
-                        return Err(VmError::NotAClosure);
+                        return Err(VmError::NotCallable);
                     }
                 }
 
@@ -572,7 +454,7 @@ impl<'buf> Vm<'buf> {
                             stat!(self, peak_stack_bytes = max self.arena.stack_used() * 4);
                         }
                     } else {
-                        return Err(VmError::NotAClosure);
+                        return Err(VmError::NotCallable);
                     }
                 }
 
@@ -854,7 +736,7 @@ impl<'buf> Vm<'buf> {
                     stat!(self, peak_stack_bytes = max self.arena.stack_used() * 4);
                 }
 
-                op::FUNCTION => {
+                op::FOREIGN => {
                     let idx = u16::from_le_bytes([code[pc], code[pc + 1]]);
                     let arity = code[pc + 2];
                     pc += 3;

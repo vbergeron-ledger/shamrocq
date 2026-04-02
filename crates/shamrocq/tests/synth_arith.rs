@@ -13,7 +13,7 @@ fn add_zero_right() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n3 = peano(&mut vm, c.tag("O"), c.tag("S"), 3);
     let n0 = peano(&mut vm, c.tag("O"), c.tag("S"), 0);
@@ -28,7 +28,7 @@ fn add_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n2 = peano(&mut vm, c.tag("O"), c.tag("S"), 2);
     let n3 = peano(&mut vm, c.tag("O"), c.tag("S"), 3);
@@ -43,7 +43,7 @@ fn mul_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n3 = peano(&mut vm, c.tag("O"), c.tag("S"), 3);
     let n4 = peano(&mut vm, c.tag("O"), c.tag("S"), 4);
@@ -58,7 +58,7 @@ fn mul_by_zero() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n5 = peano(&mut vm, c.tag("O"), c.tag("S"), 5);
     let n0 = peano(&mut vm, c.tag("O"), c.tag("S"), 0);
@@ -73,7 +73,7 @@ fn sub_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n5 = peano(&mut vm, c.tag("O"), c.tag("S"), 5);
     let n2 = peano(&mut vm, c.tag("O"), c.tag("S"), 2);
@@ -88,7 +88,7 @@ fn sub_truncated() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n2 = peano(&mut vm, c.tag("O"), c.tag("S"), 2);
     let n5 = peano(&mut vm, c.tag("O"), c.tag("S"), 5);
@@ -103,7 +103,7 @@ fn min_nat_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n3 = peano(&mut vm, c.tag("O"), c.tag("S"), 3);
     let n7 = peano(&mut vm, c.tag("O"), c.tag("S"), 7);
@@ -118,7 +118,7 @@ fn max_nat_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n3 = peano(&mut vm, c.tag("O"), c.tag("S"), 3);
     let n7 = peano(&mut vm, c.tag("O"), c.tag("S"), 7);

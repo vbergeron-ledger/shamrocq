@@ -13,7 +13,7 @@ fn str_hello_literal() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let hello = vm.global_value(c.funcs["str_hello"]);
     assert!(hello.is_bytes());
@@ -27,7 +27,7 @@ fn str_empty_literal() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let empty = vm.global_value(c.funcs["str_empty"]);
     assert!(empty.is_bytes());
@@ -41,7 +41,7 @@ fn str_len_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let hello = vm.global_value(c.funcs["str_hello"]);
     let result = vm.call(c.funcs["str_len"], &[hello]).unwrap();
@@ -55,7 +55,7 @@ fn str_first_byte() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let hello = vm.global_value(c.funcs["str_hello"]);
     let result = vm.call(c.funcs["str_first"], &[hello]).unwrap();
@@ -69,7 +69,7 @@ fn str_eq_same() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let hello = vm.global_value(c.funcs["str_hello"]);
     let hello2 = vm.arena.alloc_bytes(b"hello").unwrap();
@@ -85,7 +85,7 @@ fn str_eq_different() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let hello = vm.global_value(c.funcs["str_hello"]);
     let world = vm.arena.alloc_bytes(b"world").unwrap();
@@ -100,7 +100,7 @@ fn str_cat_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let a = vm.arena.alloc_bytes(b"foo").unwrap();
     let b = vm.arena.alloc_bytes(b"bar").unwrap();
@@ -116,7 +116,7 @@ fn str_starts_with_h_true() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let hello = vm.global_value(c.funcs["str_hello"]);
     let result = vm.call(c.funcs["str_starts_with_h"], &[hello]).unwrap();
@@ -131,7 +131,7 @@ fn str_starts_with_h_false() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let world = vm.arena.alloc_bytes(b"world").unwrap();
     let result = vm.call(c.funcs["str_starts_with_h"], &[world]).unwrap();
@@ -145,7 +145,7 @@ fn str_starts_with_h_empty() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let empty = vm.global_value(c.funcs["str_empty"]);
     let result = vm.call(c.funcs["str_starts_with_h"], &[empty]).unwrap();

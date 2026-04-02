@@ -52,22 +52,8 @@ impl TagTable {
             map: HashMap::new(),
             next: 0,
         };
-        for name in [
-            "True",
-            "False",
-            "Nil",
-            "Cons",
-            "O",
-            "S",
-            "Left",
-            "Right",
-            "Pair",
-            "Build_root",
-            "Build_edge",
-            "Build_hforest",
-        ] {
-            t.intern(name);
-        }
+        t.intern("True");
+        t.intern("False");
         t
     }
 
@@ -317,8 +303,8 @@ mod tests {
         let mut globals = GlobalTable::new();
         let rdefs = resolve_program(&defs, &mut tags, &mut globals).unwrap();
         assert!(rdefs.len() > 20);
-        // All builtin tags should still be present
         assert_eq!(tags.get("True"), Some(0));
-        assert_eq!(tags.get("Build_hforest"), Some(11));
+        assert_eq!(tags.get("False"), Some(1));
+        assert!(tags.get("Build_hforest").is_some());
     }
 }

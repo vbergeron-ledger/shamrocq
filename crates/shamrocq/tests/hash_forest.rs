@@ -16,7 +16,7 @@ fn load_program() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
     print_stats("load_program", &vm);
 }
 
@@ -26,7 +26,7 @@ fn negb_true_is_false() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let result = vm
         .call(c.func("negb"), &[Value::nullary_ctor(c.tag("True"))])
@@ -41,7 +41,7 @@ fn negb_false_is_true() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let result = vm
         .call(c.func("negb"), &[Value::nullary_ctor(c.tag("False"))])
@@ -56,7 +56,7 @@ fn length_nil_is_zero() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let nil = Value::nullary_ctor(c.tag("Nil"));
     let result = vm.call(c.func("length"), &[nil]).unwrap();
@@ -70,7 +70,7 @@ fn length_singleton() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let nil = Value::nullary_ctor(c.tag("Nil"));
     let elem = Value::nullary_ctor(c.tag("O"));
@@ -89,7 +89,7 @@ fn leb_zero_anything_is_true() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let zero = Value::nullary_ctor(c.tag("O"));
     let one = vm.alloc_ctor(c.tag("S"), &[zero]).unwrap();
@@ -105,7 +105,7 @@ fn map_negb_over_list() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let nil = Value::nullary_ctor(c.tag("Nil"));
     let t = Value::nullary_ctor(c.tag("True"));
@@ -125,7 +125,7 @@ fn hforest_init_creates_forest() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let prev = Value::nullary_ctor(c.tag("O"));
     let value = Value::nullary_ctor(c.tag("O"));
@@ -150,7 +150,7 @@ fn nat_ord_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let zero = Value::nullary_ctor(c.tag("O"));
     let one = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -189,7 +189,7 @@ fn eqb_and_leb0_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = Value::nullary_ctor(c.tag("O"));
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -218,7 +218,7 @@ fn merge_sorted_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = Value::nullary_ctor(c.tag("O"));
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -246,7 +246,7 @@ fn merge_dedup_sorted_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = Value::nullary_ctor(c.tag("O"));
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -275,7 +275,7 @@ fn merge_dedup_sorted_overlap() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = Value::nullary_ctor(c.tag("O"));
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -323,7 +323,7 @@ fn ordroot_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = Value::nullary_ctor(c.tag("O"));
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -352,7 +352,7 @@ fn merge_roots_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = Value::nullary_ctor(c.tag("O"));
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -381,7 +381,7 @@ fn hforest_merge_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = Value::nullary_ctor(c.tag("O"));
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -402,7 +402,7 @@ fn hforest_lifecycle() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     // --- List + higher-order function phase ---
 

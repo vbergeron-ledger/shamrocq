@@ -20,8 +20,8 @@
 ///   PACK              tag:u8  arity:u8
 ///   UNPACK            n:u8
 ///   BIND              n:u8
-///   FUNCTION          idx:u16le  arity:u8
-///   CLOSURE0          code_addr:u16le  arity:u8
+///   FOREIGN           idx:u16le  arity:u8
+///   FUNCTION          code_addr:u16le  arity:u8
 ///   CLOSURE           code_addr:u16le  arity:u8  n_captures:u8
 ///   FIXPOINT          cap_idx:u8
 ///
@@ -69,7 +69,7 @@ pub const SLIDE: u8 = 0x07;
 pub const PACK: u8 = 0x08;
 pub const UNPACK: u8 = 0x09;
 pub const BIND: u8 = 0x0A;
-pub const FUNCTION: u8 = 0x0B;
+pub const FOREIGN: u8 = 0x0B;
 pub const CLOSURE: u8 = 0x0C;
 pub const FIXPOINT: u8 = 0x0D;
 
@@ -108,4 +108,4 @@ pub const INT0: u8 = 0x24;
 pub const INT1: u8 = 0x25;
 pub const SLIDE1: u8 = 0x26;
 pub const MATCH2: u8 = 0x27;
-pub const CLOSURE0: u8 = 0x28;
+pub const FUNCTION: u8 = 0x28;

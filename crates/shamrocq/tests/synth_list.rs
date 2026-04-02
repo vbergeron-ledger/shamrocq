@@ -13,7 +13,7 @@ fn append_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = peano(&mut vm, c.tag("O"), c.tag("S"), 0);
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -36,7 +36,7 @@ fn append_empty() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let nil = Value::nullary_ctor(c.tag("Nil"));
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -54,7 +54,7 @@ fn reverse_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
     let n2 = peano(&mut vm, c.tag("O"), c.tag("S"), 2);
@@ -75,7 +75,7 @@ fn nth_found() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = peano(&mut vm, c.tag("O"), c.tag("S"), 0);
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
@@ -95,7 +95,7 @@ fn nth_out_of_bounds() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n0 = peano(&mut vm, c.tag("O"), c.tag("S"), 0);
     let l = make_list(&mut vm, c.tag("Nil"), c.tag("Cons"), &[n0]);
@@ -112,7 +112,7 @@ fn zip_basic() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
     let n2 = peano(&mut vm, c.tag("O"), c.tag("S"), 2);
@@ -136,7 +136,7 @@ fn zip_uneven() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let n1 = peano(&mut vm, c.tag("O"), c.tag("S"), 1);
     let n2 = peano(&mut vm, c.tag("O"), c.tag("S"), 2);
@@ -156,7 +156,7 @@ fn lrange_100() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let result = vm.call(c.func("lrange"), &[Value::integer(0), Value::integer(100)]).unwrap();
     let v = list_to_vec(&vm, c.tag("Cons"), result);
@@ -172,7 +172,7 @@ fn lrange_200() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let result = vm.call(c.func("lrange"), &[Value::integer(0), Value::integer(200)]).unwrap();
     let v = list_to_vec(&vm, c.tag("Cons"), result);
@@ -186,7 +186,7 @@ fn map_over_lrange_100() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let range = vm.call(c.func("lrange"), &[Value::integer(1), Value::integer(101)]).unwrap();
     let wrap = vm.call(c.func("wrap_some"), &[]).unwrap();
@@ -203,7 +203,7 @@ fn filter_lrange_100() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let range = vm.call(c.func("lrange"), &[Value::integer(0), Value::integer(100)]).unwrap();
     let is_pos = vm.call(c.func("is_positive"), &[]).unwrap();
@@ -219,7 +219,7 @@ fn reverse_lrange_100() {
     let prog = Program::from_blob(&c.blob).unwrap();
     let mut buf = vec![0u8; 65536];
     let mut vm = Vm::new(&mut buf);
-    vm.load_program(&prog).unwrap();
+    vm.load(&prog).unwrap();
 
     let range = vm.call(c.func("lrange"), &[Value::integer(0), Value::integer(100)]).unwrap();
     let result = vm.call(c.func("reverse"), &[range]).unwrap();
