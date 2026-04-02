@@ -79,6 +79,11 @@ fn fold(expr: Expr) -> Expr {
         Expr::Ctor(tag, fields) => {
             Expr::Ctor(tag, fields.into_iter().map(fold).collect())
         }
+        Expr::CaseNat(zc, sc, scrut) => Expr::CaseNat(
+            Box::new(fold(*zc)),
+            Box::new(fold(*sc)),
+            Box::new(fold(*scrut)),
+        ),
         other => other,
     }
 }

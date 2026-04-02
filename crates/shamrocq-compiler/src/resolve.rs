@@ -21,6 +21,8 @@ pub enum RExpr {
     Let(Box<RExpr>, Box<RExpr>),
     Letrec(Box<RExpr>, Box<RExpr>),
     Match(Box<RExpr>, Vec<RMatchCase>),
+    /// Nat eliminator: CaseNat(zero_case, succ_case, scrutinee)
+    CaseNat(Box<RExpr>, Box<RExpr>, Box<RExpr>),
     Error,
     /// A host-provided foreign function, identified by its registration index.
     Foreign(u16),
@@ -267,6 +269,12 @@ fn resolve_expr(
             }
             Ok(RExpr::Match(Box::new(rscrutinee), rcases))
         }
+
+        Expr::CaseNat(zc, sc, scrut) => Ok(RExpr::CaseNat(
+            Box::new(resolve_expr(zc, locals, tags, globals)?),
+            Box::new(resolve_expr(sc, locals, tags, globals)?),
+            Box::new(resolve_expr(scrut, locals, tags, globals)?),
+        )),
 
         Expr::Error => Ok(RExpr::Error),
 

@@ -60,6 +60,11 @@ fn elim(expr: RExpr) -> RExpr {
         RExpr::PrimOp(op, args) => {
             RExpr::PrimOp(op, args.into_iter().map(elim).collect())
         }
+        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
+            Box::new(elim(*zc)),
+            Box::new(elim(*sc)),
+            Box::new(elim(*scrut)),
+        ),
         other => other,
     }
 }

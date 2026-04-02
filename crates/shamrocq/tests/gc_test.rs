@@ -67,3 +67,22 @@ fn gc_sort_medium_heap() {
     }
     print_stats("gc_sort_medium_heap(60)", &vm);
 }
+
+#[test]
+fn gc_sort_large_heap() {
+    let c = setup_sort();
+    let prog = Program::from_blob(&c.blob).unwrap();
+    let mut buf = vec![0u8; 131072];
+    let mut vm = Vm::new(&mut buf);
+    vm.load(&prog).unwrap();
+
+    let result = vm
+        .call(c.func("sort_seq"), &[Value::integer(500)])
+        .unwrap();
+    let v = list_to_vec(&vm, c.tag("Cons"), result);
+    assert_eq!(v.len(), 500);
+    for i in 0..500 {
+        assert_eq!(v[i].integer_value(), i as i32 + 1);
+    }
+    print_stats("gc_sort_large_heap(500)", &vm);
+}

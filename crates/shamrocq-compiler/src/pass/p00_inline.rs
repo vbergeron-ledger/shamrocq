@@ -65,6 +65,7 @@ fn expr_size(expr: &Expr) -> usize {
         Expr::Match(scrut, cases) => {
             1 + expr_size(scrut) + cases.iter().map(|c| expr_size(&c.body)).sum::<usize>()
         }
+        Expr::CaseNat(zc, sc, scrut) => 1 + expr_size(zc) + expr_size(sc) + expr_size(scrut),
     }
 }
 
@@ -86,6 +87,9 @@ fn references_self(expr: &Expr, name: &str) -> bool {
         Expr::Match(scrut, cases) => {
             references_self(scrut, name)
                 || cases.iter().any(|c| references_self(&c.body, name))
+        }
+        Expr::CaseNat(zc, sc, scrut) => {
+            references_self(zc, name) || references_self(sc, name) || references_self(scrut, name)
         }
     }
 }
@@ -134,6 +138,11 @@ fn inline_expr(expr: Expr, candidates: &HashMap<String, Expr>) -> Expr {
         Expr::PrimOp(op, args) => {
             Expr::PrimOp(op, args.into_iter().map(|a| inline_expr(a, candidates)).collect())
         }
+        Expr::CaseNat(zc, sc, scrut) => Expr::CaseNat(
+            Box::new(inline_expr(*zc, candidates)),
+            Box::new(inline_expr(*sc, candidates)),
+            Box::new(inline_expr(*scrut, candidates)),
+        ),
         other => other,
     }
 }

@@ -22,6 +22,8 @@ pub(crate) fn is_atomic(expr: &RExpr) -> bool {
     matches!(expr, RExpr::Local(_) | RExpr::Global(_) | RExpr::Int(_) | RExpr::Bytes(_) | RExpr::Foreign(_))
 }
 
+// CaseNat is non-atomic, no special case needed — the default `false` from is_atomic is correct.
+
 pub(crate) fn shift(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
     match expr {
         RExpr::Local(idx) => {
@@ -69,6 +71,11 @@ pub(crate) fn shift(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
                     body: shift(&c.body, cutoff + c.arity as usize, amount),
                 })
                 .collect(),
+        ),
+        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
+            Box::new(shift(zc, cutoff, amount)),
+            Box::new(shift(sc, cutoff, amount)),
+            Box::new(shift(scrut, cutoff, amount)),
         ),
         RExpr::Error => RExpr::Error,
     }
@@ -122,6 +129,11 @@ pub(crate) fn shift_down(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
                 })
                 .collect(),
         ),
+        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
+            Box::new(shift_down(zc, cutoff, amount)),
+            Box::new(shift_down(sc, cutoff, amount)),
+            Box::new(shift_down(scrut, cutoff, amount)),
+        ),
         RExpr::Error => RExpr::Error,
     }
 }
@@ -145,6 +157,11 @@ pub(crate) fn references_local(expr: &RExpr, target: u8, depth: usize) -> bool {
         RExpr::Match(scrut, cases) => {
             references_local(scrut, target, depth)
                 || cases.iter().any(|c| references_local(&c.body, target, depth + c.arity as usize))
+        }
+        RExpr::CaseNat(zc, sc, scrut) => {
+            references_local(zc, target, depth)
+                || references_local(sc, target, depth)
+                || references_local(scrut, target, depth)
         }
     }
 }
@@ -228,6 +245,12 @@ fn anf_normalize(expr: RExpr) -> RExpr {
                     body: anf_normalize(c.body),
                 })
                 .collect(),
+        ),
+
+        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
+            Box::new(anf_normalize(*zc)),
+            Box::new(anf_normalize(*sc)),
+            Box::new(anf_normalize(*scrut)),
         ),
     }
 }

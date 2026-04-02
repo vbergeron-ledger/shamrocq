@@ -88,6 +88,11 @@ fn specialize(expr: RExpr, arities: &[u8]) -> RExpr {
         RExpr::PrimOp(op, args) => {
             RExpr::PrimOp(op, args.into_iter().map(|a| specialize(a, arities)).collect())
         }
+        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
+            Box::new(specialize(*zc, arities)),
+            Box::new(specialize(*sc, arities)),
+            Box::new(specialize(*scrut, arities)),
+        ),
         other => other,
     }
 }

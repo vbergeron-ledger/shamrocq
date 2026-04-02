@@ -1,5 +1,6 @@
 pub mod p00_inline;
 pub mod p01_beta_reduce;
+pub mod p01b_case_nat;
 pub mod p02_constant_fold;
 pub mod p03_if_to_match;
 pub mod p04_dead_binding;
@@ -68,6 +69,7 @@ pub fn expr_passes() -> Vec<Box<dyn ExprPass>> {
     vec![
         Box::new(p00_inline::InlineSmallGlobals),
         Box::new(p01_beta_reduce::BetaReduce),
+        Box::new(p01b_case_nat::CaseNat),
         Box::new(p02_constant_fold::ConstantFold),
         Box::new(p03_if_to_match::IfToMatch),
     ]

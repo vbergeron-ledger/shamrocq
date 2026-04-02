@@ -65,6 +65,11 @@ fn reduce(expr: Expr) -> Expr {
         Expr::PrimOp(op, args) => {
             Expr::PrimOp(op, args.into_iter().map(reduce).collect())
         }
+        Expr::CaseNat(zc, sc, scrut) => Expr::CaseNat(
+            Box::new(reduce(*zc)),
+            Box::new(reduce(*sc)),
+            Box::new(reduce(*scrut)),
+        ),
         other => other,
     }
 }

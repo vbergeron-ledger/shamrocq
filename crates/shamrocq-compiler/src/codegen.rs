@@ -364,6 +364,53 @@ impl Compiler {
                 }
             }
 
+            RExpr::CaseNat(zc, sc, scrut) => {
+                // Stack: [...] -> [..., scrut]
+                self.compile_expr(scrut, ctx, false);
+                // DUP INT0 EQ => [..., scrut, (scrut==0)]
+                self.emitter.emit_dup();
+                self.emitter.emit_int(0);
+                self.emitter.emit_eq();
+                // MATCH2 pops the bool, branches
+                let table_start = self.emitter.emit_match_header(0, 2); // True=0, False=1
+
+                // L0 (True / zero branch): stack has [..., scrut]
+                let l0_offset = self.emitter.pos() as u16;
+                self.emitter.patch_match_entry(table_start, 0, 0, l0_offset);
+                self.emitter.emit_drop(1); // discard scrut
+                self.compile_expr(zc, ctx, false);
+                self.emitter.emit_int(0);
+                if tail {
+                    self.emitter.emit_tail_call_dynamic();
+                } else {
+                    self.emitter.emit_call_dynamic();
+                }
+                let jmp_pos = if !tail {
+                    Some(self.emitter.emit_jmp_placeholder())
+                } else {
+                    None
+                };
+
+                // L1 (False / succ branch): stack has [..., scrut]
+                let l1_offset = self.emitter.pos() as u16;
+                self.emitter.patch_match_entry(table_start, 1, 0, l1_offset);
+                self.compile_expr(sc, ctx, false);  // [..., scrut, sc]
+                self.emitter.emit_over();            // [..., scrut, sc, scrut]
+                self.emitter.emit_int(1);
+                self.emitter.emit_sub();             // [..., scrut, sc, scrut-1]
+                if tail {
+                    self.emitter.emit_tail_call_dynamic();
+                } else {
+                    self.emitter.emit_call_dynamic();
+                    self.emitter.emit_slide(1);      // discard leftover scrut
+                }
+
+                if let Some(jmp_pos) = jmp_pos {
+                    let end = self.emitter.pos() as u16;
+                    self.emitter.patch_u16(jmp_pos, end);
+                }
+            }
+
             RExpr::Error => {
                 self.emitter.emit_error();
             }
@@ -584,6 +631,11 @@ fn collect_free(expr: &RExpr, bound: usize, free: &mut Vec<u8>) {
                 collect_free(&case.body, bound + case.arity as usize, free);
             }
         }
+        RExpr::CaseNat(zc, sc, scrut) => {
+            collect_free(zc, bound, free);
+            collect_free(sc, bound, free);
+            collect_free(scrut, bound, free);
+        }
     }
 }
 
@@ -673,4 +725,36 @@ mod tests {
         let has_call_n = prog.code.windows(1).any(|w| w[0] == op::CALL || w[0] == op::TAIL_CALL);
         assert!(has_call_n, "exact-arity call to known global should use CALL");
     }
+
+    #[test]
+    fn nat_case_emits_dup() {
+        use crate::bytecode::op;
+        let src = r#"
+            (define f (lambdas (fuel l)
+              ((lambdas (fO fS n) (if (= n 0) (fO 0) (fS (- n 1))))
+                 (lambda (_) l)
+                 (lambda (fuel~) l)
+                 fuel)))
+        "#;
+        let (prog, _) = crate::compile_sources(&[src], crate::DEFAULT_MAX_PASS_ITERATIONS).unwrap();
+        let has_dup = prog.code.iter().any(|&b| b == op::DUP);
+        assert!(has_dup, "nat-case pattern should emit DUP opcode");
+    }
+
+    #[test]
+    fn case_nat_pass_matches_pattern() {
+        use crate::pass::ExprPass;
+        let src = r#"
+            (define rev_range (lambda (n)
+              ((lambdas (fO fS n) (if (= n 0) (fO 0) (fS (- n 1))))
+                 (lambda (_) `(Nil))
+                 (lambda (m) `(Cons ,n ,(rev_range m)))
+                 n)))
+        "#;
+        let sexps = crate::parser::parse(src).unwrap();
+        let defs = crate::desugar::desugar_program(&sexps).unwrap();
+        let reduced = crate::pass::p01b_case_nat::CaseNat.run(defs.clone());
+        assert_ne!(defs, reduced, "case_nat pass should have fired on the nat eliminator pattern");
+    }
+
 }

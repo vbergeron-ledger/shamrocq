@@ -65,6 +65,11 @@ fn reduce(expr: RExpr) -> RExpr {
         RExpr::PrimOp(op, args) => {
             RExpr::PrimOp(op, args.into_iter().map(reduce).collect())
         }
+        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
+            Box::new(reduce(*zc)),
+            Box::new(reduce(*sc)),
+            Box::new(reduce(*scrut)),
+        ),
         other => other,
     }
 }

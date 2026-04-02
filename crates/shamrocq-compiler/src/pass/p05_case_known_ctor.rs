@@ -70,6 +70,11 @@ fn optimize(expr: RExpr) -> RExpr {
         RExpr::PrimOp(op, args) => {
             RExpr::PrimOp(op, args.into_iter().map(optimize).collect())
         }
+        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
+            Box::new(optimize(*zc)),
+            Box::new(optimize(*sc)),
+            Box::new(optimize(*scrut)),
+        ),
         other => other,
     }
 }
@@ -140,6 +145,11 @@ fn subst_rec(expr: &RExpr, fields: &[RExpr], arity: usize, depth: usize) -> RExp
                 arity: c.arity,
                 body: subst_rec(&c.body, fields, arity, depth + c.arity as usize),
             }).collect(),
+        ),
+        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
+            Box::new(subst_rec(zc, fields, arity, depth)),
+            Box::new(subst_rec(sc, fields, arity, depth)),
+            Box::new(subst_rec(scrut, fields, arity, depth)),
         ),
     }
 }

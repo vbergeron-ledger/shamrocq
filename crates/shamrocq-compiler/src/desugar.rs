@@ -23,6 +23,8 @@ pub enum Expr {
     Let(String, Box<Expr>, Box<Expr>),
     Letrec(String, Box<Expr>, Box<Expr>),
     Match(Box<Expr>, Vec<MatchCase>),
+    /// Nat eliminator: CaseNat(zero_case, succ_case, scrutinee)
+    CaseNat(Box<Expr>, Box<Expr>, Box<Expr>),
     Error,
     /// A host-provided foreign function, identified by its registration index.
     Foreign(u16),
