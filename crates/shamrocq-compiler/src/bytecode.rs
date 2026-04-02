@@ -72,9 +72,14 @@ impl Emitter {
 
     pub fn emit_pack(&mut self, tag: u8, arity: u8) {
         self.flush_pending_loads();
-        self.code.push(op::PACK);
-        self.code.push(tag);
-        self.code.push(arity);
+        if arity == 0 {
+            self.code.push(op::PACK0);
+            self.code.push(tag);
+        } else {
+            self.code.push(op::PACK);
+            self.code.push(tag);
+            self.code.push(arity);
+        }
     }
 
     pub fn emit_unpack(&mut self, n: u8) {

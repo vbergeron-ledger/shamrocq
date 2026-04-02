@@ -179,6 +179,7 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
             op::GLOBAL => { pc += 2; }
             op::DROP => { pc += 1; }
             op::SLIDE => { pc += 1; }
+            op::PACK0 => { pc += 1; }
             op::PACK => { pc += 2; }
             op::UNPACK => { pc += 1; }
             op::BIND => { pc += 1; }
@@ -460,6 +461,11 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
                 pc += 1;
                 bind_depth = bind_depth.saturating_sub(n as usize);
                 instr!(instr_pc, "SLIDE", "{}", n);
+            }
+            op::PACK0 => {
+                let tag = read_u8(code, pc)?;
+                pc += 1;
+                instr!(instr_pc, "PACK0", "{}", fmt_tag(tag, &tag_names, c));
             }
             op::PACK => {
                 let tag = read_u8(code, pc)?;

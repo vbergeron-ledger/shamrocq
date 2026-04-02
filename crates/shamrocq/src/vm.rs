@@ -345,19 +345,22 @@ impl<'buf> Vm<'buf> {
             pc += 1;
 
             match opcode {
+                op::PACK0 => {
+                    let tag = code[pc];
+                    self.arena.stack_push(Value::nullary_ctor(tag))?;
+                    pc += 1;
+                    stat!(self, peak_stack_bytes = max self.arena.stack_used() * 4);
+                }
+
                 op::PACK => {
                     let tag = code[pc];
                     let arity = code[pc + 1] as usize;
+                    let val = self.arena.alloc_ctor_from_stack(tag, arity)?;
+                    self.arena.stack_push(val)?;
                     pc += 2;
-                    if arity == 0 {
-                        self.arena.stack_push(Value::nullary_ctor(tag))?;
-                    } else {
-                        let val = self.arena.alloc_ctor_from_stack(tag, arity)?;
-                        self.arena.stack_push(val)?;
-                        stat!(self, alloc_count_ctor += 1);
-                        stat!(self, alloc_bytes_total += ((1 + arity) * 4) as u32);
-                        stat!(self, peak_heap_bytes = max self.arena.heap_used() * 4);
-                    }
+                    stat!(self, alloc_count_ctor += 1);
+                    stat!(self, alloc_bytes_total += ((1 + arity) * 4) as u32);
+                    stat!(self, peak_heap_bytes = max self.arena.heap_used() * 4);
                     stat!(self, peak_stack_bytes = max self.arena.stack_used() * 4);
                 }
 

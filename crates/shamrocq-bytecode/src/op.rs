@@ -15,6 +15,7 @@
 ///   SLIDE             n:u8
 ///
 ///   -- Data --
+///   PACK0             tag:u8
 ///   PACK              tag:u8  arity:u8
 ///   UNPACK            n:u8
 ///   BIND              n:u8
@@ -95,3 +96,6 @@ pub const BYTES_LEN: u8 = 0x1F;
 pub const BYTES_GET: u8 = 0x20;
 pub const BYTES_EQ: u8 = 0x21;
 pub const BYTES_CONCAT: u8 = 0x22;
+
+// Specialized
+pub const PACK0: u8 = 0x23;
