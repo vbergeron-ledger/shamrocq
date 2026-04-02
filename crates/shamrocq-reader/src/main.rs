@@ -197,6 +197,10 @@ fn scan_code(code: &[u8]) -> Result<ScanResult, String> {
             op::CALL_N => { pc += 3; }
             op::TAIL_CALL_N => { pc += 3; }
             op::RET => {}
+            op::MATCH2 => {
+                pc += 1; // base_tag
+                pc += 2 * 3;
+            }
             op::MATCH => {
                 pc += 1; // base_tag
                 let n_entries = code[pc] as usize;
@@ -539,6 +543,26 @@ fn disassemble(blob: &[u8], c: &C) -> Result<(), String> {
             }
             op::RET => {
                 instr!(instr_pc, "RET");
+            }
+            op::MATCH2 => {
+                let base_tag = read_u8(code, pc)?;
+                pc += 1;
+                let saved = bind_depth;
+                instr!(instr_pc, "MATCH2", "base_tag={}:", base_tag);
+                for i in 0..2u8 {
+                    let tag = base_tag + i;
+                    let arity = read_u8(code, pc)?;
+                    let offset = read_u16le(code, pc + 1)?;
+                    pc += 3;
+                    let tag_str = fmt_tag(tag, &tag_names, c);
+                    let bl = branch_name(tag, &tag_names);
+                    println!(
+                        "        {}|{} {} arity={} -> {:04X}",
+                        c.ylw, c.rst, tag_str, arity, offset
+                    );
+                    branch_labels.insert(offset, bl);
+                    bind_restore.insert(offset, saved);
+                }
             }
             op::MATCH => {
                 let base_tag = read_u8(code, pc)?;

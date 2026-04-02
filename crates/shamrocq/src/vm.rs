@@ -632,6 +632,32 @@ impl<'buf> Vm<'buf> {
                     frame_base = saved_fb;
                 }
 
+                op::MATCH2 => {
+                    let base_tag = code[pc] as usize;
+                    let table_start = pc + 1;
+                    pc += 1 + 2 * 3;
+
+                    let scrutinee = self.arena.stack_pop();
+                    let scrutinee_tag = scrutinee.tag();
+
+                    let idx = (scrutinee_tag as usize).wrapping_sub(base_tag);
+                    if idx >= 2 {
+                        return Err(VmError::MatchFailure { scrutinee_tag, pc });
+                    }
+
+                    let entry = table_start + idx * 3;
+                    let case_arity = code[entry] as usize;
+                    let case_offset =
+                        u16::from_le_bytes([code[entry + 1], code[entry + 2]]) as usize;
+
+                    if case_arity > 0 {
+                        self.arena.stack_push(scrutinee)?;
+                    }
+                    pc = case_offset;
+                    stat!(self, exec_match_count += 1);
+                    stat!(self, peak_stack_bytes = max self.arena.stack_used() * 4);
+                }
+
                 op::MATCH => {
                     let base_tag = code[pc] as usize;
                     let n_entries = code[pc + 1] as usize;

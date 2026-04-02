@@ -32,6 +32,7 @@
 ///   RET
 ///
 ///   -- Control flow (branching) --
+///   MATCH2            base_tag:u8  [arity:u8 offset:u16le]*2
 ///   MATCH             base_tag:u8  n_entries:u8  [arity:u8 offset:u16le]*n
 ///   JMP               offset:u16le
 ///   ERROR
@@ -105,3 +106,4 @@ pub const PACK0: u8 = 0x23;
 pub const INT0: u8 = 0x24;
 pub const INT1: u8 = 0x25;
 pub const SLIDE1: u8 = 0x26;
+pub const MATCH2: u8 = 0x27;

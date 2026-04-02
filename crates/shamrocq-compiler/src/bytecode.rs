@@ -180,9 +180,14 @@ impl Emitter {
     /// patch each real case via `patch_match_entry`.
     pub fn emit_match_header(&mut self, base_tag: u8, n_entries: u8) -> usize {
         self.flush_pending_loads();
-        self.code.push(op::MATCH);
-        self.code.push(base_tag);
-        self.code.push(n_entries);
+        if n_entries == 2 {
+            self.code.push(op::MATCH2);
+            self.code.push(base_tag);
+        } else {
+            self.code.push(op::MATCH);
+            self.code.push(base_tag);
+            self.code.push(n_entries);
+        }
         let table_start = self.code.len();
         for _ in 0..n_entries {
             self.code.extend_from_slice(&[0x00, 0xFF, 0xFF]);
