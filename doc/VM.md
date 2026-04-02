@@ -111,7 +111,7 @@ and execution jumps to `code_addr`.
 
 ### Globals
 
-A program has up to 64 global slots.  On `load_program`, the VM evaluates
+A program has up to 64 global slots.  On `load`, the VM evaluates
 each global's code in declaration order (executing its initializer expression)
 and stores the result in a fixed `[Value; 64]` array.
 
@@ -175,7 +175,7 @@ directly — no bytecode frame pushed.
 The `saved_heap` word in each frame header enables a lightweight form of
 memory reclamation without a garbage collector.
 
-On `RET` (and on `TAIL_CALL1` when returning through a frame), the VM
+On `RET` (and on `TAIL_CALL_DYNAMIC` when returning through a frame), the VM
 checks whether the result references any heap memory allocated during this
 call.  If it does not, all heap memory in the range
 `[saved_heap, current_heap_top)` is reclaimed by resetting `heap_top`.
@@ -190,6 +190,22 @@ This is sound because the language is pure: older heap objects never contain
 pointers to newer allocations.  The only mutation (`FIXPOINT`) patches a
 closure within the current frame and cannot create a backward reference
 across frames.
+
+### Garbage collection
+
+When a bump allocation would exhaust the arena, the VM triggers a
+mark-and-compact garbage collection:
+
+1. **Mark** — trace all live roots (stack, globals, frame headers) and
+   recursively mark all reachable heap objects.
+2. **Compact** — slide live objects toward the bottom of the heap, closing
+   gaps left by dead objects.  All pointers (in stack slots, globals, and
+   heap object fields) are updated in place to reflect the new positions.
+
+After compaction, `heap_top` is reset to the end of the last live object,
+freeing the rest of the heap for new allocations.  Frame-local reclamation
+continues to work alongside the GC — it handles the common case cheaply,
+while the GC handles the rest.
 
 ### Tail call optimization
 
@@ -236,7 +252,7 @@ Gap entries (tags in range but not matched) point to an `ERROR` instruction.
 let mut buf = [0u8; 65536];
 let prog = Program::from_blob(bytecode).unwrap();
 let mut vm = Vm::new(&mut buf);
-vm.load_program(&prog).unwrap();
+vm.load(&prog).unwrap();
 ```
 
 ### Calling functions
@@ -312,6 +328,8 @@ When compiled with `--features stats`, the VM records:
 | `exec_peak_call_depth` | Deepest call stack reached |
 | `reclaim_count` | Number of frames where heap was reclaimed on return |
 | `reclaim_bytes_total` | Total bytes reclaimed via frame-local reclamation |
+| `gc_collection_count` | Number of GC collections triggered |
+| `gc_bytes_freed` | Total bytes freed by GC compaction |
 
 Access via `vm.stats` (the `Stats` struct) and `vm.mem_snapshot()` (live
 heap/stack/free snapshot, available without the feature).

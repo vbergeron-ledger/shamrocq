@@ -21,8 +21,9 @@ partial application and unknown callees.
 ### Compiler optimization passes
 
 Fixed-point iteration over expr-level and resolved-level passes:
-inline small globals, beta-reduce, constant fold, if→match,
-dead binding elimination, case-of-known-ctor, eta-reduce.
+inline small globals, beta-reduce, CaseNat, constant fold, if→match,
+dead binding elimination, case-of-known-ctor, eta-reduce, arity
+specialization.
 See [CODEGEN.md](CODEGEN.md#3½-optimization-passes-pass) for details.
 
 ### Unified call stack
@@ -50,6 +51,45 @@ pointers to newer allocations.  The optimization is especially effective for
 functions that build intermediate data structures (e.g. merge/dedup in
 hforest) but return a value allocated before the call.
 
+### CaseNat — Church-encoded nat eliminator (bytecode v5)
+
+Rocq's `Extract Inductive nat` produces a Church-encoded eliminator that
+creates three closures per pattern match on a natural number.  The `CaseNat`
+compiler pass recognizes this pattern at the Expr level and rewrites it to a
+first-class `CaseNat(zero_case, succ_case, scrutinee)` IR node.
+
+At codegen time, `CaseNat` emits an inline `DUP`/`INT0`/`EQ`/`MATCH2`
+dispatch sequence — no closures are allocated for the eliminator itself.
+Two new stack opcodes (`DUP` and `OVER`) preserve the scrutinee across
+branches without introducing `Let` bindings.
+
+Benchmark results (`shamrocq-bench`, merge_sort(rev_range(256))):
+
+| Metric | Before | After | Change |
+|---|---:|---:|---:|
+| closures allocated | 5,375 | 2,815 | −47.6% |
+| total alloc bytes | 150,512 B | 111,600 B | −25.8% |
+| instructions | 119,835 | 94,748 | −20.9% |
+| GC collections | 7 | 3 | −57.1% |
+| GC bytes freed | 200,988 B | 84,852 B | −57.8% |
+
+Impact scales with the number of nat eliminators in the program:
+
+| Benchmark | Instructions | Closures | Heap |
+|---|---|---|---|
+| sort | −20.9% | −47.6% | −0.1% |
+| rbtree | −6.5% | −33.0% | −15.9% |
+| eval | −12.8% | −4.9% | −36.6% |
+| parser | −0.6% | — | −0.2% |
+
+### Garbage collector
+
+Mark-and-compact GC over the contiguous heap.  Triggered when a bump
+allocation would overflow, the collector traces live roots from the stack
+and globals, compacts survivors toward the bottom of the heap, and updates
+all pointers.  Reclaims memory from functions that accumulate intermediate
+data beyond what frame-local reclamation can handle.
+
 ---
 
 ## Known issues
@@ -68,15 +108,12 @@ go through the curried CALL_DYNAMIC pipeline:
 Each of these creates PAP (Application) objects on the heap.  A GRAB/multi-arg
 calling convention (see Roadmap) would handle all three.
 
-### 2. No GC
+### 2. GC pressure
 
-The bump allocator never frees anything except via frame-local reclamation.
-Frame-local reclamation only recovers memory when the return value has no
-reference into the frame's heap region.  Functions that return a freshly
-allocated result (the common case for constructors) do not benefit.
-
-For deep recursion over large data structures, heap exhaustion remains the
-primary failure mode.
+The mark-and-compact GC handles heap exhaustion, but collections are
+whole-heap: every object is traced and relocated.  Programs with high
+allocation rates (e.g. recursive list construction) may trigger frequent
+collections, each of which scans the entire live set.
 
 ### 3. Dispatch Overhead
 
@@ -127,8 +164,8 @@ has arity 2 but is called with 3 args.
 
 | Change | Impact | Effort |
 |--------|--------|--------|
-| **Deep reclamation** — scan result fields recursively to reclaim more aggressively | Medium | Medium |
-| **Copying/compacting GC** — semi-space collector fits the single-buffer model | Critical for real workloads | High |
+| ~~**Copying/compacting GC**~~ | ~~Critical~~ | ~~High~~ — **done** (mark-and-compact) |
+| **Generational / incremental GC** — reduce per-collection pause by partitioning the heap | Medium | High |
 
 ### Tier 4: Aspirational
 
@@ -144,5 +181,5 @@ has arity 2 but is called with 3 args.
 
 1. **GRAB / full multi-arg calls** (Tier 1 phases 2–3)
 2. **Unsafe word access** (Tier 0)
-3. **Deep reclamation or GC** (Tier 3)
-4. **Threaded dispatch** (Tier 2)
+3. **Threaded dispatch** (Tier 2)
+4. **Generational / incremental GC** (Tier 3)

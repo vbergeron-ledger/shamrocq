@@ -101,6 +101,33 @@ Remove the top `n` values from the stack.
 Pop the result, drop `n` values below it, re-push the result. Used to clean
 up `let` and `match` bindings in non-tail position.
 
+#### `SLIDE1` (0x26)
+
+```
+26
+```
+
+Pop the result, drop the value below it, re-push the result. Specialized
+form of `SLIDE 1` — saves one byte in the common single-binding case.
+
+#### `DUP` (0x29)
+
+```
+29
+```
+
+Duplicate the top-of-stack value. Stack `[… a]` becomes `[… a a]`.
+
+#### `OVER` (0x2A)
+
+```
+2A
+```
+
+Copy the second value from the top of stack and push it. Stack `[… a b]`
+becomes `[… a b a]`. Used by `CaseNat` codegen to preserve the scrutinee
+while building the succ-case call.
+
 ### Data
 
 #### `PACK` (0x08)
@@ -112,6 +139,15 @@ up `let` and `match` bindings in non-tail position.
 If `arity` is 0, push a nullary constructor value (no heap allocation).
 Otherwise pop `arity` values from the stack (top = last field), heap-allocate
 a constructor with the given tag, push the result.
+
+#### `PACK0` (0x23)
+
+```
+23 tag:u8
+```
+
+Push a nullary constructor with the given tag. No heap allocation.
+Specialized form of `PACK tag 0` — saves one operand byte.
 
 #### `UNPACK` (0x09)
 
@@ -132,7 +168,7 @@ Pop the scrutinee constructor, push its first `n` fields. Like `UNPACK` but
 used after a `MATCH` instruction to make constructor fields available as
 local bindings.
 
-#### `FUNCTION` (0x0B)
+#### `FOREIGN` (0x0B)
 
 ```
 0B idx:u16le arity:u8
@@ -179,6 +215,16 @@ Then overwrite slot 1 (the `letrec` dummy) with the closure and pop TOS.
 
 This is the only mutation in the entire VM — it makes `letrec` work without
 a GC or indirection cell.
+
+#### `FUNCTION` (0x28)
+
+```
+28 code_addr:u16le arity:u8
+```
+
+Push a `Value::function(code_addr, arity)` — a bare (zero-capture) function
+pointer. Used when a lambda has no free variables and does not need heap
+allocation.
 
 ### Control flow
 
@@ -256,6 +302,17 @@ Jump to `offset`.
 
 Gap entries (tags in range but not matched) point to an `ERROR` instruction.
 
+#### `MATCH2` (0x27)
+
+```
+27 base_tag:u8
+   [arity:u8 offset:u16le] × 2
+```
+
+Two-entry match. Identical to `MATCH` but with an implicit `n_entries = 2`,
+saving one header byte. Used for boolean dispatches (True/False) and
+`CaseNat` zero/non-zero tests.
+
 #### `JMP` (0x14)
 
 ```
@@ -282,6 +339,22 @@ arms that should be unreachable.
 ```
 
 Push a 29-bit signed integer Value onto the stack. No heap allocation.
+
+#### `INT0` (0x24)
+
+```
+24
+```
+
+Push integer 0. Specialized form of `INT 0` — saves 4 bytes.
+
+#### `INT1` (0x25)
+
+```
+25
+```
+
+Push integer 1. Specialized form of `INT 1` — saves 4 bytes.
 
 #### `ADD` (0x17)
 
@@ -352,7 +425,7 @@ with `BytesOverflow` if the combined length exceeds 255.
 | `PACK` | `0x08` | `tag:u8 arity:u8` | 3 |
 | `UNPACK` | `0x09` | `n:u8` | 2 |
 | `BIND` | `0x0A` | `n:u8` | 2 |
-| `FUNCTION` | `0x0B` | `idx:u16le arity:u8` | 4 |
+| `FOREIGN` | `0x0B` | `idx:u16le arity:u8` | 4 |
 | `CLOSURE` | `0x0C` | `code_addr:u16le arity:u8 n_captures:u8` | 5 |
 | `FIXPOINT` | `0x0D` | `cap_idx:u8` | 2 |
 | `CALL_DYNAMIC` | `0x0E` | — | 1 |
@@ -376,6 +449,14 @@ with `BytesOverflow` if the combined length exceeds 255.
 | `BYTES_GET` | `0x20` | — | 1 |
 | `BYTES_EQ` | `0x21` | — | 1 |
 | `BYTES_CONCAT` | `0x22` | — | 1 |
+| `PACK0` | `0x23` | `tag:u8` | 2 |
+| `INT0` | `0x24` | — | 1 |
+| `INT1` | `0x25` | — | 1 |
+| `SLIDE1` | `0x26` | — | 1 |
+| `MATCH2` | `0x27` | `base_tag:u8 [arity:u8 off:u16le]*2` | 7 |
+| `FUNCTION` | `0x28` | `code_addr:u16le arity:u8` | 4 |
+| `DUP` | `0x29` | — | 1 |
+| `OVER` | `0x2A` | — | 1 |
 
 ## Value kinds
 

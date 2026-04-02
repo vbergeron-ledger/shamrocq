@@ -242,6 +242,22 @@ Extract Constant Nat.ltb    => "(lambdas (n m) (if (< n m) `(True) `(False)))".
 (* --- list and bool map directly, no directives needed --- *)
 ```
 
+### Compiler optimization: CaseNat
+
+The case function `(lambdas (fO fS n) (if (= n 0) (fO 0) (fS (- n 1))))`
+appears at every pattern match on a natural number. Without optimization,
+each occurrence allocates three closures at runtime.
+
+The compiler's `CaseNat` pass (see [CODEGEN.md](CODEGEN.md)) recognizes
+this exact pattern — structurally, regardless of parameter names — and
+rewrites it to a first-class `CaseNat` IR node. At codegen time this emits
+an inline integer test and branch (`DUP`/`EQ`/`MATCH2`) instead of closure
+allocations. On the sort benchmark this reduces closure allocations by 48%
+and total instructions by 21%.
+
+No extraction-side changes are needed — the standard `Extract Inductive nat`
+directive produces the pattern that `CaseNat` recognizes automatically.
+
 ### Caveats
 
 - **Strict branches**: the case function evaluates the `O` branch eagerly

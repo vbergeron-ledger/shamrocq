@@ -23,22 +23,29 @@ long-running tasks.
 ## Architecture
 
 ```
-scheme/                  Scheme sources (Rocq extractions + synthetic tests)
 crates/
   shamrocq-compiler/     Build-time compiler: parse → optimize → resolve → codegen
   shamrocq/              no_std runtime: arena, value representation, bytecode VM
   shamrocq-bytecode/     Shared opcode definitions
 doc/                     Technical documentation (see doc/README.md)
+rocq-projects/           Rocq/Coq sources + extraction configs (sort, rbtree, eval, parser)
 examples/
-  baremetal/             Complete STM32 Cortex-M4 firmware example
+  sort/                  Merge sort benchmark (Cortex-M4 baremetal)
+  rbtree/                Red-black tree benchmark
+  eval/                  Lambda calculus normaliser benchmark
+  parser/                Binary format parser benchmark
+  demo/                  Minimal demo firmware
+tools/
+  bench/                 Baremetal benchmark runner (QEMU semihosting)
 ```
 
 ### Compiler pipeline
 
 1. **Parser** — S-expression reader
 2. **Desugarer** — expands `lambdas`, `@`, `quasiquote`/`unquote`, `match`
-3. **Optimization passes** — inline, beta-reduce, constant fold, dead
-   binding elimination, case-of-known-ctor, eta-reduce
+3. **Optimization passes** — inline, beta-reduce, CaseNat, constant fold,
+   dead binding elimination, case-of-known-ctor, eta-reduce, arity
+   specialization
 4. **Resolver** — de Bruijn indexing, constructor tag interning
 5. **Arity analysis + ANF** — tags multi-arg globals for direct calls,
    normalizes to A-normal form
@@ -55,6 +62,10 @@ See [doc/CODEGEN.md](doc/CODEGEN.md) for details.
 - **Stack** grows downward from the other end of the same buffer
 - **Frame-local reclamation** reclaims heap memory on function return when
   the result does not reference the frame's allocations
+- **Mark-and-compact GC** handles heap exhaustion by tracing live roots and
+  compacting survivors
+- **CaseNat** rewrites Church-encoded nat eliminators (from Rocq extraction)
+  into inline dispatch, eliminating closure allocations
 - **Direct calls** (`CALL`) bypass the curried closure chain for known
   globals at exact arity
 - **Match** dispatches via O(1) jump table indexed by constructor tag
@@ -106,14 +117,14 @@ use shamrocq::{Program, Vm, Value, tags};
 let mut buf = [0u8; 65536];
 let prog = Program::from_blob(BYTECODE).unwrap();
 let mut vm = Vm::new(&mut buf);
-vm.load_program(&prog).unwrap();
+vm.load(&prog).unwrap();
 
 let result = vm.call(funcs::NEGB, &[Value::ctor(tags::TRUE, 0)]).unwrap();
 assert_eq!(result.tag(), tags::FALSE);
 ```
 
-See [`examples/baremetal/`](examples/baremetal/) for a complete STM32
-firmware example with FFI, list manipulation, and semihosting output.
+See [`examples/demo/`](examples/demo/) for a complete STM32 firmware example
+with FFI, list manipulation, and semihosting output.
 
 ## Footprint
 
@@ -139,17 +150,28 @@ cargo test --features stats         # with memory/execution statistics printed
 
 ### Benchmarking
 
-Run tests with `stats` and capture results to a JSONL file:
+#### Baremetal benchmarks (QEMU)
+
+The `shamrocq-bench` tool builds each example as a Cortex-M firmware, runs
+it in QEMU with semihosting, and captures VM statistics:
 
 ```sh
-BENCHMARK_FILE=benchmarks/run.jsonl \
-BENCHMARK_COMMIT=$(git rev-parse --short HEAD) \
-BENCHMARK_TIMESTAMP=$(date -Iseconds) \
-  cargo test --features stats -p shamrocq -- --nocapture
+cargo run -p shamrocq-bench                  # all benchmarks
+cargo run -p shamrocq-bench -- sort rbtree   # specific benchmarks
+cargo run -p shamrocq-bench -- --profile     # + QEMU function profiling
 ```
 
-Each test that calls `print_stats` appends a JSON line with allocation counts,
-instruction counts, peak memory, and reclaim statistics.
+Results are saved to `bench-results/` and printed as a summary table with
+peak heap, peak stack, instructions, calls, allocations, reclaim, and
+wall-clock time.
+
+#### Test-based stats
+
+Run tests with `stats` to see per-test VM counters:
+
+```sh
+cargo test --features stats -p shamrocq -- --nocapture
+```
 
 ## Documentation
 
