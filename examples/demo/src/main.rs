@@ -7,12 +7,7 @@ use panic_halt as _;
 
 use shamrocq::{Program, Value, Vm, VmError};
 
-static BYTECODE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bytecode.bin"));
-
-mod bindings {
-    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
-use bindings::{ctors, funcs, foreign};
+shamrocq::include_program!(env!("OUT_DIR"));
 
 fn print_int(_vm: &mut Vm<'_>, arg: Value) -> Result<Value, VmError> {
     let _ = hprintln!("{}", arg.integer_value());

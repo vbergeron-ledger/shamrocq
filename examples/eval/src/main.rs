@@ -7,12 +7,8 @@ use panic_halt as _;
 
 use shamrocq::{Program, Value, Vm, VmError};
 
-static BYTECODE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bytecode.bin"));
-
-mod bindings {
-    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
-use bindings::{ctors, funcs};
+shamrocq::include_program!(env!("OUT_DIR"));
+shamrocq::static_heap!(HEAP, 40_000);
 
 fn vm_exit_err(e: VmError) -> ! {
     let _ = hprintln!("VM error: {:?}", e);
@@ -28,12 +24,9 @@ fn read_option_nat(vm: &Vm, v: Value) -> Option<i32> {
     }
 }
 
-static mut HEAP: [u8; 40_000] = [0; 40_000];
-
 #[entry]
 fn main() -> ! {
-    let buf = unsafe { &raw mut HEAP }.cast::<[u8; 40_000]>();
-    let buf = unsafe { &mut *buf };
+    let buf = HEAP();
     let prog = Program::from_blob(BYTECODE)
         .unwrap_or_else(|e| vm_exit_err(e));
     let mut vm = Vm::new(buf);
