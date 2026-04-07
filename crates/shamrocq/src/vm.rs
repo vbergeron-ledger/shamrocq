@@ -27,6 +27,8 @@ pub struct Vm<'buf> {
     staging: [Value; 16],
     #[cfg(feature = "stats")]
     pub stats: ExecStats,
+    #[cfg(feature = "stats")]
+    cycle_reader: fn() -> u32,
 }
 
 impl<'buf> Vm<'buf> {
@@ -40,12 +42,19 @@ impl<'buf> Vm<'buf> {
             staging: [Value::ZERO; 16],
             #[cfg(feature = "stats")]
             stats: ExecStats::default(),
+            #[cfg(feature = "stats")]
+            cycle_reader: || 0,
         }
     }
 
     #[cfg(feature = "stats")]
     pub fn combined_stats(&self) -> crate::stats::Stats {
         crate::stats::Stats::from(&self.arena.stats, &self.stats)
+    }
+
+    #[cfg(feature = "stats")]
+    pub fn set_cycle_reader(&mut self, f: fn() -> u32) {
+        self.cycle_reader = f;
     }
 
     pub fn register_foreign(&mut self, idx: u16, f: ForeignFn) {
@@ -216,7 +225,13 @@ impl<'buf> Vm<'buf> {
             hdr.pc += 1;
 
             #[cfg(feature = "stats")]
-            { self.stats.opcode_counts[opcode as usize] += 1; }
+            {
+                self.stats.opcode_counts[opcode as usize] += 1;
+            }
+            #[cfg(feature = "stats")]
+            let heap_before = self.arena.heap_used();
+            #[cfg(feature = "stats")]
+            let cyc_before = (self.cycle_reader)();
 
             match opcode {
                 op::PACK0 => {
@@ -666,6 +681,16 @@ impl<'buf> Vm<'buf> {
                 }
 
                 _ => return Err(VmError::InvalidBytecode),
+            }
+
+            #[cfg(feature = "stats")]
+            {
+                let heap_after = self.arena.heap_used();
+                if heap_after > heap_before {
+                    self.stats.opcode_heap_words[opcode as usize] += (heap_after - heap_before) as u32;
+                }
+                let cyc_delta = (self.cycle_reader)().wrapping_sub(cyc_before);
+                self.stats.opcode_cycles[opcode as usize] += cyc_delta as u64;
             }
         }
     }

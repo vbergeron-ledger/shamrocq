@@ -23,6 +23,8 @@ pub struct ArenaStats {
 #[derive(Debug, Clone)]
 pub struct ExecStats {
     pub opcode_counts: [usize; 256],
+    pub opcode_heap_words: [u32; 256],
+    pub opcode_cycles: [u64; 256],
     pub peak_call_depth: u32,
 }
 
@@ -31,6 +33,8 @@ impl Default for ExecStats {
     fn default() -> Self {
         ExecStats {
             opcode_counts: [0; 256],
+            opcode_heap_words: [0; 256],
+            opcode_cycles: [0; 256],
             peak_call_depth: 0,
         }
     }
@@ -47,6 +51,8 @@ pub struct Stats {
     pub alloc_bytes_total: u32,
 
     pub opcode_counts: [usize; 256],
+    pub opcode_heap_words: [u32; 256],
+    pub opcode_cycles: [u64; 256],
     pub peak_call_depth: u32,
 
     pub reclaim_count: u32,
@@ -70,6 +76,8 @@ impl Stats {
             gc_count: arena.gc_count,
             gc_bytes_reclaimed: arena.gc_bytes_reclaimed,
             opcode_counts: exec.opcode_counts,
+            opcode_heap_words: exec.opcode_heap_words,
+            opcode_cycles: exec.opcode_cycles,
             peak_call_depth: exec.peak_call_depth,
         }
     }
@@ -89,10 +97,19 @@ impl fmt::Display for Stats {
         writeln!(f, "    ctors          {:>6}", self.alloc_count_ctor)?;
         writeln!(f, "    closures       {:>6}", self.alloc_count_closure)?;
         writeln!(f, "    total bytes    {:>6} B", self.alloc_bytes_total)?;
+        let has_heap = self.opcode_heap_words.iter().any(|&w| w > 0);
+        let has_cycles = self.opcode_cycles.iter().any(|&c| c > 0);
         writeln!(f, "  execution ({} instructions)", self.instruction_count())?;
         for (i, &count) in self.opcode_counts.iter().enumerate() {
             if count > 0 {
-                writeln!(f, "    {:18} {:>6}", op::name(i as u8), count)?;
+                write!(f, "    {:18} {:>6}", op::name(i as u8), count)?;
+                if has_heap {
+                    write!(f, " {:>8}w", self.opcode_heap_words[i])?;
+                }
+                if has_cycles {
+                    write!(f, " {:>10}c", self.opcode_cycles[i])?;
+                }
+                writeln!(f)?;
             }
         }
         writeln!(f, "    peak depth     {:>6}", self.peak_call_depth)?;
