@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ir::{Define, Expr, RDefine, RExpr, RMatchCase};
+use crate::ir::{Defines, Expr, RDefine, RDefines, RExpr, RMatchCase};
 
 /// Interns constructor tag names to u8 IDs.
 pub struct TagTable {
@@ -78,17 +78,16 @@ impl GlobalTable {
 
 /// Resolve a full program.
 pub fn resolve_program(
-    defs: &[Define],
+    defs: &Defines,
     tags: &mut TagTable,
     globals: &mut GlobalTable,
-) -> Result<Vec<RDefine>, String> {
-    // First pass: register all global names so mutual references work.
-    for def in defs {
+) -> Result<RDefines, String> {
+    for def in defs.iter() {
         globals.register(&def.name);
     }
 
     let mut resolved = Vec::new();
-    for def in defs {
+    for def in defs.iter() {
         let idx = globals.get(&def.name).unwrap();
         let env = Vec::new();
         let body = resolve_expr(&def.body, &env, tags, globals)?;
@@ -98,7 +97,7 @@ pub fn resolve_program(
             body,
         });
     }
-    Ok(resolved)
+    Ok(RDefines(resolved))
 }
 
 fn resolve_expr(

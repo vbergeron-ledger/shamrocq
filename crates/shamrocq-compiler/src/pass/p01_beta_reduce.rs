@@ -8,7 +8,7 @@
 //! them with a simple BIND. Only fires when the lambda is syntactically in
 //! function position (not a variable reference), so it never duplicates code.
 
-use crate::ir::{Define, Expr, ExprVisitor};
+use crate::ir::{Defines, Expr};
 use super::ExprPass;
 
 pub struct BetaReduce;
@@ -16,34 +16,24 @@ pub struct BetaReduce;
 impl ExprPass for BetaReduce {
     fn name(&self) -> &'static str { "beta_reduce" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
-        BetaReduceVisitor.visit_program(defs)
-    }
-}
-
-struct BetaReduceVisitor;
-
-impl ExprVisitor for BetaReduceVisitor {
-    fn visit_expr(&mut self, expr: Expr) -> Expr {
-        match expr {
+    fn run(&self, defs: Defines) -> Defines {
+        defs.bottom_up(&|e| match e {
             Expr::App(func, arg) => {
-                let func = self.visit_expr(*func);
-                let arg = self.visit_expr(*arg);
-                if let Expr::Lambda(param, body) = func {
-                    Expr::Let(param, Box::new(arg), body)
+                if let Expr::Lambda(param, body) = *func {
+                    Expr::Let(param, arg, body)
                 } else {
-                    Expr::App(Box::new(func), Box::new(arg))
+                    Expr::App(func, arg)
                 }
             }
-            other => self.walk_expr(other),
-        }
+            other => other,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::Expr;
+    use crate::ir::{Define, Expr};
 
     fn def(name: &str, body: Expr) -> Define {
         Define { name: name.to_string(), body }
@@ -56,7 +46,7 @@ mod tests {
             Box::new(Expr::Lambda("x".into(), Box::new(Expr::Var("x".into())))),
             Box::new(Expr::Int(42)),
         ));
-        let result = BetaReduce.run(vec![input]);
+        let result = BetaReduce.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Let(
             "x".into(),
             Box::new(Expr::Int(42)),
@@ -72,7 +62,7 @@ mod tests {
             Box::new(Expr::Int(42)),
         ));
         let expected = input.clone();
-        let result = BetaReduce.run(vec![input]);
+        let result = BetaReduce.run(vec![input].into());
         assert_eq!(result[0].body, expected.body);
     }
 
@@ -87,7 +77,7 @@ mod tests {
             )))),
             Box::new(Expr::Int(1)),
         ));
-        let result = BetaReduce.run(vec![input]);
+        let result = BetaReduce.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Let(
             "x".into(),
             Box::new(Expr::Int(1)),

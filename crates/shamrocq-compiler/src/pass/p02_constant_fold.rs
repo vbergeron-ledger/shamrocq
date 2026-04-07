@@ -11,7 +11,7 @@
 //!     (if True a b)                      =>  a
 //!     (match (True) ((True) a) ((False) b))  =>  a
 
-use crate::ir::{Define, Expr, ExprVisitor, MatchCase, PrimOp};
+use crate::ir::{Defines, Expr, MatchCase, PrimOp};
 use super::ExprPass;
 
 pub struct ConstantFold;
@@ -19,54 +19,38 @@ pub struct ConstantFold;
 impl ExprPass for ConstantFold {
     fn name(&self) -> &'static str { "constant_fold" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
-        ConstantFoldVisitor.visit_program(defs)
+    fn run(&self, defs: Defines) -> Defines {
+        defs.bottom_up(&|e| match e {
+            Expr::PrimOp(op, args) => fold_primop(op, args),
+            Expr::Match(scrut, cases) => fold_match(*scrut, cases),
+            Expr::If(c, t, e) => fold_if(*c, *t, *e),
+            other => other,
+        })
     }
 }
 
-struct ConstantFoldVisitor;
-
-impl ExprVisitor for ConstantFoldVisitor {
-    fn visit_expr(&mut self, expr: Expr) -> Expr {
-        match expr {
-            Expr::PrimOp(op, args) => {
-                let args: Vec<Expr> = args.into_iter().map(|a| self.visit_expr(a)).collect();
-                fold_primop(op, args)
-            }
-            Expr::Match(scrut, cases) => {
-                let scrut = self.visit_expr(*scrut);
-                let cases: Vec<MatchCase> = cases.into_iter().map(|c| MatchCase {
-                    tag: c.tag,
-                    bindings: c.bindings,
-                    body: self.visit_expr(c.body),
-                }).collect();
-                if let Expr::Ctor(ref tag, ref fields) = scrut {
-                    if fields.is_empty() {
-                        if let Some(case) = cases.iter().find(|c| c.tag == *tag) {
-                            if case.bindings.is_empty() {
-                                return case.body.clone();
-                            }
-                        }
-                    }
+fn fold_match(scrut: Expr, cases: Vec<MatchCase>) -> Expr {
+    if let Expr::Ctor(ref tag, ref fields) = scrut {
+        if fields.is_empty() {
+            if let Some(case) = cases.iter().find(|c| c.tag == *tag) {
+                if case.bindings.is_empty() {
+                    return case.body.clone();
                 }
-                Expr::Match(Box::new(scrut), cases)
             }
-            Expr::If(c, t, e) => {
-                let c = self.visit_expr(*c);
-                let t = self.visit_expr(*t);
-                let e = self.visit_expr(*e);
-                match &c {
-                    Expr::Ctor(tag, fields) if fields.is_empty() => {
-                        if tag == "True" { return t; }
-                        if tag == "False" { return e; }
-                    }
-                    _ => {}
-                }
-                Expr::If(Box::new(c), Box::new(t), Box::new(e))
-            }
-            other => self.walk_expr(other),
         }
     }
+    Expr::Match(Box::new(scrut), cases)
+}
+
+fn fold_if(c: Expr, t: Expr, e: Expr) -> Expr {
+    match &c {
+        Expr::Ctor(tag, fields) if fields.is_empty() => {
+            if tag == "True" { return t; }
+            if tag == "False" { return e; }
+        }
+        _ => {}
+    }
+    Expr::If(Box::new(c), Box::new(t), Box::new(e))
 }
 
 fn fold_primop(op: PrimOp, args: Vec<Expr>) -> Expr {
@@ -97,7 +81,7 @@ fn fold_primop(op: PrimOp, args: Vec<Expr>) -> Expr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::Expr;
+    use crate::ir::{Define, Expr, MatchCase};
 
     fn def(name: &str, body: Expr) -> Define {
         Define { name: name.to_string(), body }
@@ -106,21 +90,21 @@ mod tests {
     #[test]
     fn fold_add() {
         let input = def("f", Expr::PrimOp(PrimOp::Add, vec![Expr::Int(1), Expr::Int(2)]));
-        let result = ConstantFold.run(vec![input]);
+        let result = ConstantFold.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Int(3));
     }
 
     #[test]
     fn fold_eq_true() {
         let input = def("f", Expr::PrimOp(PrimOp::Eq, vec![Expr::Int(5), Expr::Int(5)]));
-        let result = ConstantFold.run(vec![input]);
+        let result = ConstantFold.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Ctor("True".into(), vec![]));
     }
 
     #[test]
     fn fold_eq_false() {
         let input = def("f", Expr::PrimOp(PrimOp::Eq, vec![Expr::Int(1), Expr::Int(2)]));
-        let result = ConstantFold.run(vec![input]);
+        let result = ConstantFold.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Ctor("False".into(), vec![]));
     }
 
@@ -132,7 +116,7 @@ mod tests {
             Box::new(Expr::Int(1)),
             Box::new(Expr::Int(2)),
         ));
-        let result = ConstantFold.run(vec![input]);
+        let result = ConstantFold.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Int(1));
     }
 
@@ -144,7 +128,7 @@ mod tests {
             Box::new(Expr::Int(1)),
             Box::new(Expr::Int(2)),
         ));
-        let result = ConstantFold.run(vec![input]);
+        let result = ConstantFold.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Int(2));
     }
 
@@ -158,7 +142,7 @@ mod tests {
                 MatchCase { tag: "False".into(), bindings: vec![], body: Expr::Int(2) },
             ],
         ));
-        let result = ConstantFold.run(vec![input]);
+        let result = ConstantFold.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Int(1));
     }
 
@@ -167,7 +151,7 @@ mod tests {
         // (+ x 1) unchanged
         let input = def("f", Expr::PrimOp(PrimOp::Add, vec![Expr::Var("x".into()), Expr::Int(1)]));
         let expected = input.clone();
-        let result = ConstantFold.run(vec![input]);
+        let result = ConstantFold.run(vec![input].into());
         assert_eq!(result[0].body, expected.body);
     }
 
@@ -178,7 +162,7 @@ mod tests {
             Expr::PrimOp(PrimOp::Add, vec![Expr::Int(1), Expr::Int(2)]),
             Expr::PrimOp(PrimOp::Sub, vec![Expr::Int(10), Expr::Int(4)]),
         ]));
-        let result = ConstantFold.run(vec![input]);
+        let result = ConstantFold.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Int(9));
     }
 }

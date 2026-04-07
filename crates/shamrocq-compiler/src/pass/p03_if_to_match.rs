@@ -9,7 +9,7 @@
 //! After this pass, the resolver no longer needs a special case for `If`
 //! and the rest of the pipeline only deals with `Match`.
 
-use crate::ir::{Define, Expr, ExprVisitor, MatchCase};
+use crate::ir::{Defines, Expr, MatchCase};
 use super::ExprPass;
 
 pub struct IfToMatch;
@@ -17,37 +17,26 @@ pub struct IfToMatch;
 impl ExprPass for IfToMatch {
     fn name(&self) -> &'static str { "if_to_match" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
-        IfToMatchVisitor.visit_program(defs)
-    }
-}
-
-struct IfToMatchVisitor;
-
-impl ExprVisitor for IfToMatchVisitor {
-    fn visit_expr(&mut self, expr: Expr) -> Expr {
-        match expr {
+    fn run(&self, defs: Defines) -> Defines {
+        defs.bottom_up(&|e| match e {
             Expr::If(c, t, e) => {
-                let c = self.visit_expr(*c);
-                let t = self.visit_expr(*t);
-                let e = self.visit_expr(*e);
                 Expr::Match(
-                    Box::new(c),
+                    c,
                     vec![
-                        MatchCase { tag: "True".to_string(), bindings: Vec::new(), body: t },
-                        MatchCase { tag: "False".to_string(), bindings: Vec::new(), body: e },
+                        MatchCase { tag: "True".to_string(), bindings: Vec::new(), body: *t },
+                        MatchCase { tag: "False".to_string(), bindings: Vec::new(), body: *e },
                     ],
                 )
             }
-            other => self.walk_expr(other),
-        }
+            other => other,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::Expr;
+    use crate::ir::{Define, Expr};
 
     fn def(name: &str, body: Expr) -> Define {
         Define { name: name.to_string(), body }
@@ -61,7 +50,7 @@ mod tests {
             Box::new(Expr::Int(1)),
             Box::new(Expr::Int(2)),
         ));
-        let result = IfToMatch.run(vec![input]);
+        let result = IfToMatch.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Match(
             Box::new(Expr::Var("x".into())),
             vec![
@@ -83,7 +72,7 @@ mod tests {
             Box::new(Expr::Var("d".into())),
             Box::new(Expr::Var("e".into())),
         ));
-        let result = IfToMatch.run(vec![input]);
+        let result = IfToMatch.run(vec![input].into());
         // Both levels should be Match
         if let Expr::Match(scrut, _) = &result[0].body {
             assert!(matches!(**scrut, Expr::Match(_, _)));
@@ -95,7 +84,7 @@ mod tests {
     #[test]
     fn non_if_unchanged() {
         let input = def("f", Expr::Int(42));
-        let result = IfToMatch.run(vec![input]);
+        let result = IfToMatch.run(vec![input].into());
         assert_eq!(result[0].body, Expr::Int(42));
     }
 }

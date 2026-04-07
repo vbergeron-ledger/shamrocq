@@ -1,4 +1,4 @@
-use crate::ir::{PrimOp, RDefine, RExpr, RMatchCase};
+use crate::ir::{Ctx, PrimOp, RDefines, RExpr, RMatchCase};
 use super::ResolvedPass;
 
 pub struct AnfNormalize;
@@ -6,14 +6,8 @@ pub struct AnfNormalize;
 impl ResolvedPass for AnfNormalize {
     fn name(&self) -> &'static str { "anf_normalize" }
 
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine> {
-        defs.into_iter()
-            .map(|d| RDefine {
-                name: d.name,
-                global_idx: d.global_idx,
-                body: anf_normalize(d.body),
-            })
-            .collect()
+    fn run(&self, defs: RDefines) -> RDefines {
+        defs.map_bodies(anf_normalize)
     }
 }
 
@@ -25,143 +19,28 @@ pub(crate) fn is_atomic(expr: &RExpr) -> bool {
 
 pub(crate) fn shift(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
     match expr {
-        RExpr::Local(idx) => {
-            if (*idx as usize) >= cutoff {
-                RExpr::Local(*idx + amount as u8)
-            } else {
-                RExpr::Local(*idx)
-            }
-        }
-        RExpr::Global(idx) => RExpr::Global(*idx),
-        RExpr::Int(n) => RExpr::Int(*n),
-        RExpr::Bytes(data) => RExpr::Bytes(data.clone()),
-        RExpr::Foreign(idx) => RExpr::Foreign(*idx),
-        RExpr::Ctor(tag, fields) => {
-            RExpr::Ctor(*tag, fields.iter().map(|f| shift(f, cutoff, amount)).collect())
-        }
-        RExpr::PrimOp(op, args) => {
-            RExpr::PrimOp(*op, args.iter().map(|a| shift(a, cutoff, amount)).collect())
-        }
-        RExpr::Lambda(body) => RExpr::Lambda(Box::new(shift(body, cutoff + 1, amount))),
-        RExpr::Lambdas(n, body) => RExpr::Lambdas(*n, Box::new(shift(body, cutoff + *n as usize, amount))),
-        RExpr::App(func, arg) => RExpr::App(
-            Box::new(shift(func, cutoff, amount)),
-            Box::new(shift(arg, cutoff, amount)),
-        ),
-        RExpr::AppN(func, args) => RExpr::AppN(
-            Box::new(shift(func, cutoff, amount)),
-            args.iter().map(|a| shift(a, cutoff, amount)).collect(),
-        ),
-        RExpr::Let(val, body) => RExpr::Let(
-            Box::new(shift(val, cutoff, amount)),
-            Box::new(shift(body, cutoff + 1, amount)),
-        ),
-        RExpr::Letrec(val, body) => RExpr::Letrec(
-            Box::new(shift(val, cutoff + 1, amount)),
-            Box::new(shift(body, cutoff + 1, amount)),
-        ),
-        RExpr::Match(scrut, cases) => RExpr::Match(
-            Box::new(shift(scrut, cutoff, amount)),
-            cases
-                .iter()
-                .map(|c| RMatchCase {
-                    tag: c.tag,
-                    arity: c.arity,
-                    body: shift(&c.body, cutoff + c.arity as usize, amount),
-                })
-                .collect(),
-        ),
-        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
-            Box::new(shift(zc, cutoff, amount)),
-            Box::new(shift(sc, cutoff, amount)),
-            Box::new(shift(scrut, cutoff, amount)),
-        ),
-        RExpr::Error => RExpr::Error,
+        RExpr::Local(idx) if (*idx as usize) >= cutoff => RExpr::Local(*idx + amount as u8),
+        _ => expr.map_children_ref(Ctx { depth: cutoff }, |child: &RExpr, ctx: Ctx| {
+            shift(child, ctx.depth, amount)
+        }),
     }
 }
 
 pub(crate) fn shift_down(expr: &RExpr, cutoff: usize, amount: usize) -> RExpr {
     match expr {
-        RExpr::Local(idx) => {
-            if (*idx as usize) >= cutoff {
-                RExpr::Local(idx.wrapping_sub(amount as u8))
-            } else {
-                RExpr::Local(*idx)
-            }
-        }
-        RExpr::Global(idx) => RExpr::Global(*idx),
-        RExpr::Int(n) => RExpr::Int(*n),
-        RExpr::Bytes(data) => RExpr::Bytes(data.clone()),
-        RExpr::Foreign(idx) => RExpr::Foreign(*idx),
-        RExpr::Ctor(tag, fields) => {
-            RExpr::Ctor(*tag, fields.iter().map(|f| shift_down(f, cutoff, amount)).collect())
-        }
-        RExpr::PrimOp(op, args) => {
-            RExpr::PrimOp(*op, args.iter().map(|a| shift_down(a, cutoff, amount)).collect())
-        }
-        RExpr::Lambda(body) => RExpr::Lambda(Box::new(shift_down(body, cutoff + 1, amount))),
-        RExpr::Lambdas(n, body) => RExpr::Lambdas(*n, Box::new(shift_down(body, cutoff + *n as usize, amount))),
-        RExpr::App(func, arg) => RExpr::App(
-            Box::new(shift_down(func, cutoff, amount)),
-            Box::new(shift_down(arg, cutoff, amount)),
-        ),
-        RExpr::AppN(func, args) => RExpr::AppN(
-            Box::new(shift_down(func, cutoff, amount)),
-            args.iter().map(|a| shift_down(a, cutoff, amount)).collect(),
-        ),
-        RExpr::Let(val, body) => RExpr::Let(
-            Box::new(shift_down(val, cutoff, amount)),
-            Box::new(shift_down(body, cutoff + 1, amount)),
-        ),
-        RExpr::Letrec(val, body) => RExpr::Letrec(
-            Box::new(shift_down(val, cutoff + 1, amount)),
-            Box::new(shift_down(body, cutoff + 1, amount)),
-        ),
-        RExpr::Match(scrut, cases) => RExpr::Match(
-            Box::new(shift_down(scrut, cutoff, amount)),
-            cases
-                .iter()
-                .map(|c| RMatchCase {
-                    tag: c.tag,
-                    arity: c.arity,
-                    body: shift_down(&c.body, cutoff + c.arity as usize, amount),
-                })
-                .collect(),
-        ),
-        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
-            Box::new(shift_down(zc, cutoff, amount)),
-            Box::new(shift_down(sc, cutoff, amount)),
-            Box::new(shift_down(scrut, cutoff, amount)),
-        ),
-        RExpr::Error => RExpr::Error,
+        RExpr::Local(idx) if (*idx as usize) >= cutoff => RExpr::Local(idx.wrapping_sub(amount as u8)),
+        _ => expr.map_children_ref(Ctx { depth: cutoff }, |child: &RExpr, ctx: Ctx| {
+            shift_down(child, ctx.depth, amount)
+        }),
     }
 }
 
 pub(crate) fn references_local(expr: &RExpr, target: u8, depth: usize) -> bool {
     match expr {
         RExpr::Local(idx) => *idx as usize == target as usize + depth,
-        RExpr::Global(_) | RExpr::Int(_) | RExpr::Bytes(_) | RExpr::Error | RExpr::Foreign(_) => false,
-        RExpr::Ctor(_, fields) => fields.iter().any(|f| references_local(f, target, depth)),
-        RExpr::PrimOp(_, args) => args.iter().any(|a| references_local(a, target, depth)),
-        RExpr::Lambda(body) => references_local(body, target, depth + 1),
-        RExpr::Lambdas(n, body) => references_local(body, target, depth + *n as usize),
-        RExpr::App(f, a) => references_local(f, target, depth) || references_local(a, target, depth),
-        RExpr::AppN(f, args) => references_local(f, target, depth) || args.iter().any(|a| references_local(a, target, depth)),
-        RExpr::Let(val, body) => {
-            references_local(val, target, depth) || references_local(body, target, depth + 1)
-        }
-        RExpr::Letrec(val, body) => {
-            references_local(val, target, depth + 1) || references_local(body, target, depth + 1)
-        }
-        RExpr::Match(scrut, cases) => {
-            references_local(scrut, target, depth)
-                || cases.iter().any(|c| references_local(&c.body, target, depth + c.arity as usize))
-        }
-        RExpr::CaseNat(zc, sc, scrut) => {
-            references_local(zc, target, depth)
-                || references_local(sc, target, depth)
-                || references_local(scrut, target, depth)
-        }
+        _ => expr.any_child(Ctx { depth }, |child: &RExpr, ctx: Ctx| {
+            references_local(child, target, ctx.depth)
+        }),
     }
 }
 

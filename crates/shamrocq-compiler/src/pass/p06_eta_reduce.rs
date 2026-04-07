@@ -9,7 +9,7 @@
 //! not appear free in `f`. This saves one closure allocation and one call
 //! at runtime.
 
-use crate::ir::{RDefine, RExpr, RExprVisitor};
+use crate::ir::{Ctx, RDefines, RExpr};
 use super::ResolvedPass;
 use super::p08_anf::{references_local, shift_down};
 
@@ -18,36 +18,32 @@ pub struct EtaReduce;
 impl ResolvedPass for EtaReduce {
     fn name(&self) -> &'static str { "eta_reduce" }
 
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine> {
-        EtaReduceVisitor.visit_rprogram(defs)
+    fn run(&self, defs: RDefines) -> RDefines {
+        defs.map_bodies(eta)
     }
 }
 
-struct EtaReduceVisitor;
-
-impl RExprVisitor for EtaReduceVisitor {
-    fn visit_rexpr(&mut self, expr: RExpr) -> RExpr {
-        match expr {
-            RExpr::Lambda(body) => {
-                let body = self.visit_rexpr(*body);
-                if let RExpr::App(ref f, ref arg) = body {
-                    if let RExpr::Local(0) = **arg {
-                        if !references_local(f, 0, 0) {
-                            return shift_down(f, 0, 1);
-                        }
+fn eta(expr: RExpr) -> RExpr {
+    match expr {
+        RExpr::Lambda(body) => {
+            let body = eta(*body);
+            if let RExpr::App(ref f, ref arg) = body {
+                if let RExpr::Local(0) = **arg {
+                    if !references_local(f, 0, 0) {
+                        return shift_down(f, 0, 1);
                     }
                 }
-                RExpr::Lambda(Box::new(body))
             }
-            other => self.walk_rexpr(other),
+            RExpr::Lambda(Box::new(body))
         }
+        other => other.map_children(Ctx::new(), |child, _| eta(child)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::RExpr;
+    use crate::ir::{RDefine, RExpr};
 
     fn rdef(name: &str, body: RExpr) -> RDefine {
         RDefine { name: name.to_string(), global_idx: 0, body }
@@ -59,7 +55,7 @@ mod tests {
         let input = rdef("f", RExpr::Lambda(Box::new(
             RExpr::App(Box::new(RExpr::Global(0)), Box::new(RExpr::Local(0))),
         )));
-        let result = EtaReduce.run(vec![input]);
+        let result = EtaReduce.run(vec![input].into());
         assert_eq!(result[0].body, RExpr::Global(0));
     }
 
@@ -70,7 +66,7 @@ mod tests {
             RExpr::App(Box::new(RExpr::Local(0)), Box::new(RExpr::Local(0))),
         )));
         let expected = input.clone();
-        let result = EtaReduce.run(vec![input]);
+        let result = EtaReduce.run(vec![input].into());
         assert_eq!(result[0].body, expected.body);
     }
 
@@ -86,7 +82,7 @@ mod tests {
                 Box::new(RExpr::Local(0)),
             ),
         )));
-        let result = EtaReduce.run(vec![input]);
+        let result = EtaReduce.run(vec![input].into());
         assert_eq!(result[0].body, RExpr::Global(0));
     }
 
@@ -97,7 +93,7 @@ mod tests {
             RExpr::App(Box::new(RExpr::Global(0)), Box::new(RExpr::Global(1))),
         )));
         let expected = input.clone();
-        let result = EtaReduce.run(vec![input]);
+        let result = EtaReduce.run(vec![input].into());
         assert_eq!(result[0].body, expected.body);
     }
 }

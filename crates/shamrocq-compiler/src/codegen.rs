@@ -1,6 +1,5 @@
 use crate::bytecode::{Emitter, ProgramHeader};
 use crate::ir::PrimOp;
-use crate::pass::p07_arity_analysis::lambda_arity;
 use crate::ir::{RDefine, RExpr, RMatchCase};
 
 pub struct CompiledProgram {
@@ -142,7 +141,7 @@ impl Ctx {
 }
 
 pub fn compile_program(defs: &[RDefine]) -> CompiledProgram {
-    let global_arities: Vec<u8> = defs.iter().map(|d| lambda_arity(&d.body)).collect();
+    let global_arities: Vec<u8> = defs.iter().map(|d| d.body.lambda_arity()).collect();
 
     let mut c = Compiler {
         emitter: Emitter::new(),

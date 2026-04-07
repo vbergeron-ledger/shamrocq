@@ -1,9 +1,9 @@
-use crate::ir::{Define, Expr, MatchCase, PrimOp};
+use crate::ir::{Define, Defines, Expr, MatchCase, PrimOp};
 use crate::parser::Sexp;
 
 /// Desugar a list of top-level S-expressions into Defines.
 /// Skips `load` forms.
-pub fn desugar_program(sexps: &[Sexp]) -> Result<Vec<Define>, String> {
+pub fn desugar_program(sexps: &[Sexp]) -> Result<Defines, String> {
     let mut defs = Vec::new();
     let mut n_foreign: u16 = 0;
     for sexp in sexps {
@@ -78,7 +78,7 @@ pub fn desugar_program(sexps: &[Sexp]) -> Result<Vec<Define>, String> {
             _ => return Err("unexpected top-level atom".to_string()),
         }
     }
-    Ok(defs)
+    Ok(Defines(defs))
 }
 
 fn desugar_define(items: &[Sexp]) -> Result<Define, String> {
@@ -395,7 +395,7 @@ mod tests {
     use super::*;
     use crate::parser::parse;
 
-    fn desugar(src: &str) -> Vec<Define> {
+    fn desugar(src: &str) -> Defines {
         let sexps = parse(src).unwrap();
         desugar_program(&sexps).unwrap()
     }

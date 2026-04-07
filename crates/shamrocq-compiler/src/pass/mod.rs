@@ -6,23 +6,22 @@ pub mod p03_if_to_match;
 pub mod p04_dead_binding;
 pub mod p05_case_known_ctor;
 pub mod p06_eta_reduce;
-pub mod p07_arity_analysis;
 pub mod p07b_arity_specialize;
 pub mod p08_anf;
 
 use std::collections::HashMap;
 
-use crate::ir::Define;
-use crate::ir::RDefine;
+use crate::ir::Defines;
+use crate::ir::RDefines;
 
 pub trait ExprPass {
     fn name(&self) -> &'static str;
-    fn run(&self, defs: Vec<Define>) -> Vec<Define>;
+    fn run(&self, defs: Defines) -> Defines;
 }
 
 pub trait ResolvedPass {
     fn name(&self) -> &'static str;
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine>;
+    fn run(&self, defs: RDefines) -> RDefines;
 }
 
 /// Per-pass enable/disable overrides parsed from `--pass:name=yes/no`.
@@ -80,7 +79,6 @@ pub fn resolved_passes() -> Vec<Box<dyn ResolvedPass>> {
         Box::new(p04_dead_binding::DeadBindingElim),
         Box::new(p05_case_known_ctor::CaseOfKnownCtor),
         Box::new(p06_eta_reduce::EtaReduce),
-        Box::new(p07_arity_analysis::ArityAnalysis),
         Box::new(p07b_arity_specialize::AritySpecialize),
         Box::new(p08_anf::AnfNormalize),
     ]

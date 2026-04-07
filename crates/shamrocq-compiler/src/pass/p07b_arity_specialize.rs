@@ -22,8 +22,7 @@
 //! Also flattens nested App chains targeting a known global into AppN
 //! so the above rewrites can fire.
 
-use crate::ir::{RDefine, RExpr, RExprVisitor};
-use crate::pass::p07_arity_analysis::lambda_arity;
+use crate::ir::{Ctx, RDefines, RExpr};
 use crate::pass::p08_anf::shift;
 use super::ResolvedPass;
 
@@ -32,36 +31,30 @@ pub struct AritySpecialize;
 impl ResolvedPass for AritySpecialize {
     fn name(&self) -> &'static str { "arity_specialize" }
 
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine> {
-        let arities: Vec<u8> = defs.iter().map(|d| lambda_arity(&d.body)).collect();
-        AritySpecializeVisitor { arities }.visit_rprogram(defs)
+    fn run(&self, defs: RDefines) -> RDefines {
+        let arities: Vec<u8> = defs.iter().map(|d| d.body.lambda_arity()).collect();
+        defs.map_bodies(|b| arity_spec(b, &arities))
     }
 }
 
-struct AritySpecializeVisitor {
-    arities: Vec<u8>,
-}
-
-impl RExprVisitor for AritySpecializeVisitor {
-    fn visit_rexpr(&mut self, expr: RExpr) -> RExpr {
-        let expr = flatten_app_chain(expr);
-        match expr {
-            RExpr::AppN(func, args) => {
-                let func = self.visit_rexpr(*func);
-                let args: Vec<RExpr> = args.into_iter().map(|a| self.visit_rexpr(a)).collect();
-                if let RExpr::Global(idx) = &func {
-                    let arity = self.arities.get(*idx as usize).copied().unwrap_or(0) as usize;
-                    if arity >= 2 && args.len() > arity {
-                        return split_over(func, args, arity);
-                    }
-                    if arity >= 2 && args.len() >= 2 && args.len() < arity {
-                        return eta_expand_under(func, args, arity);
-                    }
+fn arity_spec(expr: RExpr, arities: &[u8]) -> RExpr {
+    let expr = flatten_app_chain(expr);
+    match expr {
+        RExpr::AppN(func, args) => {
+            let func = arity_spec(*func, arities);
+            let args: Vec<RExpr> = args.into_iter().map(|a| arity_spec(a, arities)).collect();
+            if let RExpr::Global(idx) = &func {
+                let arity = arities.get(*idx as usize).copied().unwrap_or(0) as usize;
+                if arity >= 2 && args.len() > arity {
+                    return split_over(func, args, arity);
                 }
-                RExpr::AppN(Box::new(func), args)
+                if arity >= 2 && args.len() >= 2 && args.len() < arity {
+                    return eta_expand_under(func, args, arity);
+                }
             }
-            other => self.walk_rexpr(other),
+            RExpr::AppN(Box::new(func), args)
         }
+        other => other.map_children(Ctx::new(), |child, _| arity_spec(child, arities)),
     }
 }
 
@@ -124,7 +117,7 @@ mod tests {
     use crate::ir::RExpr;
 
     fn specialize(expr: RExpr, arities: &[u8]) -> RExpr {
-        AritySpecializeVisitor { arities: arities.to_vec() }.visit_rexpr(expr)
+        arity_spec(expr, arities)
     }
 
     #[test]

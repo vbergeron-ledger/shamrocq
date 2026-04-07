@@ -11,7 +11,7 @@
 //! For nullary constructors the substitution is trivial (just pick the body).
 //! This often fires after constant folding or inlining produces known ctors.
 
-use crate::ir::{RDefine, RExpr, RExprVisitor, RMatchCase};
+use crate::ir::{Ctx, RDefines, RExpr, RMatchCase};
 use super::ResolvedPass;
 use super::p08_anf::{shift, shift_down};
 
@@ -20,39 +20,35 @@ pub struct CaseOfKnownCtor;
 impl ResolvedPass for CaseOfKnownCtor {
     fn name(&self) -> &'static str { "case_of_known_ctor" }
 
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine> {
-        CaseOfKnownCtorVisitor.visit_rprogram(defs)
+    fn run(&self, defs: RDefines) -> RDefines {
+        defs.map_bodies(case_known)
     }
 }
 
-struct CaseOfKnownCtorVisitor;
+fn case_known(expr: RExpr) -> RExpr {
+    match expr {
+        RExpr::Match(scrut, cases) => {
+            let scrut = case_known(*scrut);
+            let cases: Vec<RMatchCase> = cases.into_iter().map(|c| RMatchCase {
+                tag: c.tag,
+                arity: c.arity,
+                body: case_known(c.body),
+            }).collect();
 
-impl RExprVisitor for CaseOfKnownCtorVisitor {
-    fn visit_rexpr(&mut self, expr: RExpr) -> RExpr {
-        match expr {
-            RExpr::Match(scrut, cases) => {
-                let scrut = self.visit_rexpr(*scrut);
-                let cases: Vec<RMatchCase> = cases.into_iter().map(|c| RMatchCase {
-                    tag: c.tag,
-                    arity: c.arity,
-                    body: self.visit_rexpr(c.body),
-                }).collect();
-
-                if let RExpr::Ctor(tag, ref fields) = scrut {
-                    if let Some(case) = cases.iter().find(|c| c.tag == tag) {
-                        let arity = case.arity as usize;
-                        if arity == 0 {
-                            return case.body.clone();
-                        }
-                        if arity == fields.len() {
-                            return subst_fields(&case.body, fields, arity);
-                        }
+            if let RExpr::Ctor(tag, ref fields) = scrut {
+                if let Some(case) = cases.iter().find(|c| c.tag == tag) {
+                    let arity = case.arity as usize;
+                    if arity == 0 {
+                        return case.body.clone();
+                    }
+                    if arity == fields.len() {
+                        return subst_fields(&case.body, fields, arity);
                     }
                 }
-                RExpr::Match(Box::new(scrut), cases)
             }
-            other => self.walk_rexpr(other),
+            RExpr::Match(Box::new(scrut), cases)
         }
+        other => other.map_children(Ctx::new(), |child, _| case_known(child)),
     }
 }
 
@@ -74,67 +70,23 @@ fn subst_rec(expr: &RExpr, fields: &[RExpr], arity: usize, depth: usize) -> RExp
         RExpr::Local(idx) => {
             let idx = *idx as usize;
             if idx >= depth && idx < depth + arity {
-                let field_idx = arity - 1 - (idx - depth);
-                shift(&fields[field_idx], 0, depth)
+                shift(&fields[arity - 1 - (idx - depth)], 0, depth)
             } else if idx >= depth + arity {
                 RExpr::Local((idx + arity) as u8)
             } else {
                 RExpr::Local(idx as u8)
             }
         }
-        RExpr::Global(idx) => RExpr::Global(*idx),
-        RExpr::Int(n) => RExpr::Int(*n),
-        RExpr::Bytes(data) => RExpr::Bytes(data.clone()),
-        RExpr::Foreign(idx) => RExpr::Foreign(*idx),
-        RExpr::Error => RExpr::Error,
-        RExpr::Ctor(tag, fs) => {
-            RExpr::Ctor(*tag, fs.iter().map(|f| subst_rec(f, fields, arity, depth)).collect())
-        }
-        RExpr::PrimOp(op, args) => {
-            RExpr::PrimOp(*op, args.iter().map(|a| subst_rec(a, fields, arity, depth)).collect())
-        }
-        RExpr::Lambda(body) => {
-            RExpr::Lambda(Box::new(subst_rec(body, fields, arity, depth + 1)))
-        }
-        RExpr::Lambdas(n, body) => {
-            RExpr::Lambdas(*n, Box::new(subst_rec(body, fields, arity, depth + *n as usize)))
-        }
-        RExpr::App(f, a) => RExpr::App(
-            Box::new(subst_rec(f, fields, arity, depth)),
-            Box::new(subst_rec(a, fields, arity, depth)),
-        ),
-        RExpr::AppN(f, args) => RExpr::AppN(
-            Box::new(subst_rec(f, fields, arity, depth)),
-            args.iter().map(|a| subst_rec(a, fields, arity, depth)).collect(),
-        ),
-        RExpr::Let(val, body) => RExpr::Let(
-            Box::new(subst_rec(val, fields, arity, depth)),
-            Box::new(subst_rec(body, fields, arity, depth + 1)),
-        ),
-        RExpr::Letrec(val, body) => RExpr::Letrec(
-            Box::new(subst_rec(val, fields, arity, depth + 1)),
-            Box::new(subst_rec(body, fields, arity, depth + 1)),
-        ),
-        RExpr::Match(scrut, cases) => RExpr::Match(
-            Box::new(subst_rec(scrut, fields, arity, depth)),
-            cases.iter().map(|c| RMatchCase {
-                tag: c.tag,
-                arity: c.arity,
-                body: subst_rec(&c.body, fields, arity, depth + c.arity as usize),
-            }).collect(),
-        ),
-        RExpr::CaseNat(zc, sc, scrut) => RExpr::CaseNat(
-            Box::new(subst_rec(zc, fields, arity, depth)),
-            Box::new(subst_rec(sc, fields, arity, depth)),
-            Box::new(subst_rec(scrut, fields, arity, depth)),
-        ),
+        _ => expr.map_children_ref(Ctx { depth }, |child: &RExpr, ctx: Ctx| {
+            subst_rec(child, fields, arity, ctx.depth)
+        }),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::RExpr;
+    use crate::ir::{RDefine, RExpr};
 
     fn rdef(name: &str, body: RExpr) -> RDefine {
         RDefine { name: name.to_string(), global_idx: 0, body }
@@ -150,7 +102,7 @@ mod tests {
                 RMatchCase { tag: 1, arity: 0, body: RExpr::Int(2) },
             ],
         ));
-        let result = CaseOfKnownCtor.run(vec![input]);
+        let result = CaseOfKnownCtor.run(vec![input].into());
         assert_eq!(result[0].body, RExpr::Int(1));
     }
 
@@ -163,7 +115,7 @@ mod tests {
                 RMatchCase { tag: 0, arity: 1, body: RExpr::Local(0) },
             ],
         ));
-        let result = CaseOfKnownCtor.run(vec![input]);
+        let result = CaseOfKnownCtor.run(vec![input].into());
         assert_eq!(result[0].body, RExpr::Int(42));
     }
 
@@ -182,7 +134,7 @@ mod tests {
                 },
             ],
         ));
-        let result = CaseOfKnownCtor.run(vec![input]);
+        let result = CaseOfKnownCtor.run(vec![input].into());
         assert_eq!(result[0].body, RExpr::PrimOp(
             PrimOp::Add,
             vec![RExpr::Int(10), RExpr::Int(20)],
@@ -199,7 +151,7 @@ mod tests {
             ],
         ));
         let expected = input.clone();
-        let result = CaseOfKnownCtor.run(vec![input]);
+        let result = CaseOfKnownCtor.run(vec![input].into());
         assert_eq!(result[0].body, expected.body);
     }
 }

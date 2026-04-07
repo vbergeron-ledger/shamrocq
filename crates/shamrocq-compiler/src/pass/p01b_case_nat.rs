@@ -12,7 +12,7 @@
 //! No new variable bindings are introduced, avoiding the scoping issues
 //! that plagued the Let-based rewriting approach.
 
-use crate::ir::{Define, Expr, ExprVisitor, PrimOp};
+use crate::ir::{Defines, Expr, PrimOp};
 use super::ExprPass;
 
 pub struct CaseNat;
@@ -20,8 +20,17 @@ pub struct CaseNat;
 impl ExprPass for CaseNat {
     fn name(&self) -> &'static str { "case_nat" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
-        CaseNatVisitor.visit_program(defs)
+    fn run(&self, defs: Defines) -> Defines {
+        defs.bottom_up(&|e| match e {
+            Expr::AppN(f, args) => {
+                if let Some((zc, sc, scrut)) = try_match_nat_elim(&f, &args) {
+                    Expr::CaseNat(Box::new(zc), Box::new(sc), Box::new(scrut))
+                } else {
+                    Expr::AppN(f, args)
+                }
+            }
+            other => other,
+        })
     }
 }
 
@@ -73,29 +82,10 @@ fn try_match_nat_elim(func: &Expr, args: &[Expr]) -> Option<(Expr, Expr, Expr)> 
     Some((args[0].clone(), args[1].clone(), args[2].clone()))
 }
 
-struct CaseNatVisitor;
-
-impl ExprVisitor for CaseNatVisitor {
-    fn visit_expr(&mut self, expr: Expr) -> Expr {
-        match expr {
-            Expr::AppN(f, args) => {
-                let f = self.visit_expr(*f);
-                let args: Vec<Expr> = args.into_iter().map(|a| self.visit_expr(a)).collect();
-                if let Some((zc, sc, scrut)) = try_match_nat_elim(&f, &args) {
-                    Expr::CaseNat(Box::new(zc), Box::new(sc), Box::new(scrut))
-                } else {
-                    Expr::AppN(Box::new(f), args)
-                }
-            }
-            other => self.walk_expr(other),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::Expr;
+    use crate::ir::{Define, Expr};
 
     fn def(name: &str, body: Expr) -> Define {
         Define { name: name.to_string(), body }
@@ -133,7 +123,7 @@ mod tests {
         let sc = Expr::Lambda("fuel~".into(), Box::new(Expr::Var("l".into())));
         let scrut = Expr::Var("fuel".into());
         let input = def("f", nat_elim_appn(zc.clone(), sc.clone(), scrut.clone()));
-        let result = CaseNat.run(vec![input]);
+        let result = CaseNat.run(vec![input].into());
         assert_eq!(
             result[0].body,
             Expr::CaseNat(Box::new(zc), Box::new(sc), Box::new(scrut)),
@@ -165,7 +155,7 @@ mod tests {
             )),
             vec![Expr::Int(10), Expr::Int(20), Expr::Var("k".into())],
         ));
-        let result = CaseNat.run(vec![input]);
+        let result = CaseNat.run(vec![input].into());
         match &result[0].body {
             Expr::CaseNat(zc, sc, scrut) => {
                 assert_eq!(**zc, Expr::Int(10));
@@ -183,7 +173,7 @@ mod tests {
             vec![Expr::Int(1), Expr::Int(2)],
         ));
         let expected = input.clone();
-        let result = CaseNat.run(vec![input]);
+        let result = CaseNat.run(vec![input].into());
         assert_eq!(result[0].body, expected.body);
     }
 
@@ -198,7 +188,7 @@ mod tests {
             vec!["n".into(), "l".into()],
             Box::new(inner),
         ));
-        let result = CaseNat.run(vec![input]);
+        let result = CaseNat.run(vec![input].into());
         match &result[0].body {
             Expr::Lambdas(_, body) => {
                 assert!(matches!(body.as_ref(), Expr::CaseNat(..)));

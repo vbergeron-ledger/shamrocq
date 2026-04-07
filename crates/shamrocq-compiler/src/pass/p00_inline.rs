@@ -13,7 +13,7 @@
 //! is used at many call sites.
 
 use std::collections::HashMap;
-use crate::ir::{Define, Expr, ExprRefVisitor, ExprVisitor};
+use crate::ir::{Define, Defines, Expr};
 use super::ExprPass;
 
 pub struct InlineSmallGlobals;
@@ -21,12 +21,21 @@ pub struct InlineSmallGlobals;
 impl ExprPass for InlineSmallGlobals {
     fn name(&self) -> &'static str { "inline_small_globals" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
+    fn run(&self, defs: Defines) -> Defines {
         let candidates = find_candidates(&defs);
         if candidates.is_empty() {
             return defs;
         }
-        InlineVisitor { candidates }.visit_program(defs)
+        defs.bottom_up(&|e| match e {
+            Expr::Var(ref name) => {
+                if let Some(body) = candidates.get(name) {
+                    body.clone()
+                } else {
+                    e
+                }
+            }
+            other => other,
+        })
     }
 }
 
@@ -40,75 +49,32 @@ fn find_candidates(defs: &[Define]) -> HashMap<String, Expr> {
     candidates
 }
 
-fn is_small(expr: &Expr) -> bool {
-    let mut v = ExprSizeVisitor { size: 0 };
-    v.visit_expr_ref(expr);
-    v.size <= 5
-}
-
-struct ExprSizeVisitor {
-    size: usize,
-}
-
-impl ExprRefVisitor for ExprSizeVisitor {
-    fn visit_expr_ref(&mut self, expr: &Expr) {
-        match expr {
-            Expr::Lambdas(params, body) => {
-                self.size += params.len();
-                self.visit_expr_ref(body);
-            }
-            _ => {
-                self.size += 1;
-                self.walk_expr_ref(expr);
-            }
+fn expr_size(expr: &Expr) -> usize {
+    match expr {
+        Expr::Lambdas(params, body) => params.len() + expr_size(body),
+        other => {
+            let mut n = 1;
+            other.for_each_child(|child| n += expr_size(child));
+            n
         }
     }
+}
+
+fn is_small(expr: &Expr) -> bool {
+    expr_size(expr) <= 5
 }
 
 fn references_self(expr: &Expr, name: &str) -> bool {
-    let mut v = ReferencesVarVisitor { name, found: false };
-    v.visit_expr_ref(expr);
-    v.found
-}
-
-struct ReferencesVarVisitor<'a> {
-    name: &'a str,
-    found: bool,
-}
-
-impl ExprRefVisitor for ReferencesVarVisitor<'_> {
-    fn visit_expr_ref(&mut self, expr: &Expr) {
-        if self.found { return; }
-        if let Expr::Var(v) = expr {
-            if v == self.name { self.found = true; return; }
-        }
-        self.walk_expr_ref(expr);
-    }
-}
-
-struct InlineVisitor {
-    candidates: HashMap<String, Expr>,
-}
-
-impl ExprVisitor for InlineVisitor {
-    fn visit_expr(&mut self, expr: Expr) -> Expr {
-        match expr {
-            Expr::Var(ref name) => {
-                if let Some(body) = self.candidates.get(name) {
-                    body.clone()
-                } else {
-                    expr
-                }
-            }
-            other => self.walk_expr(other),
-        }
+    match expr {
+        Expr::Var(v) if v == name => true,
+        other => other.any_child(|child| references_self(child, name)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::Expr;
+    use crate::ir::{Define, Expr};
 
     fn def(name: &str, body: Expr) -> Define {
         Define { name: name.to_string(), body }
@@ -125,7 +91,7 @@ mod tests {
                 Expr::App(Box::new(Expr::Var("id".into())), Box::new(Expr::Var("y".into()))),
             ))),
         ];
-        let result = InlineSmallGlobals.run(defs);
+        let result = InlineSmallGlobals.run(defs.into());
         let expected_f = Expr::Lambda("y".into(), Box::new(
             Expr::App(
                 Box::new(Expr::Lambda("x".into(), Box::new(Expr::Var("x".into())))),
@@ -143,7 +109,7 @@ mod tests {
             ))),
         ];
         let expected = defs.clone();
-        let result = InlineSmallGlobals.run(defs);
+        let result = InlineSmallGlobals.run(defs.into());
         assert_eq!(result[0].body, expected[0].body);
     }
 
@@ -162,7 +128,7 @@ mod tests {
             def("big", big_body.clone()),
             def("f", Expr::Var("big".into())),
         ];
-        let result = InlineSmallGlobals.run(defs);
+        let result = InlineSmallGlobals.run(defs.into());
         assert_eq!(result[1].body, Expr::Var("big".into()));
     }
 }
