@@ -24,6 +24,7 @@ pub struct Vm<'buf> {
     n_globals: u16,
     code: &'buf [u8],
     foreign_fns: [ForeignFn; MAX_FOREIGN_FNS],
+    staging: [Value; 16],
     #[cfg(feature = "stats")]
     pub stats: ExecStats,
 }
@@ -36,6 +37,7 @@ impl<'buf> Vm<'buf> {
             n_globals: 0,
             code: &[],
             foreign_fns: [unregistered_foreign_fn; MAX_FOREIGN_FNS],
+            staging: [Value::ZERO; 16],
             #[cfg(feature = "stats")]
             stats: ExecStats::default(),
         }
@@ -400,16 +402,15 @@ impl<'buf> Vm<'buf> {
                     let n_args = code[hdr.pc + 2] as usize;
                     hdr.pc += 3;
 
-                    let mut tmp = [Value::integer(0); 16];
                     for i in (0..n_args).rev() {
-                        tmp[i] = self.arena.stack_pop();
+                        self.staging[i] = self.arena.stack_pop();
                     }
 
                     self.arena.stack_frame_push(&hdr)?;
                     call_depth += 1;
                     hdr.frame_base = self.arena.stack_bot_pos();
                     for i in 0..n_args {
-                        self.arena.stack_push(tmp[i])?;
+                        self.arena.stack_push(self.staging[i])?;
                     }
                     hdr.pc = code_addr;
                     stat!(self, peak_call_depth = max call_depth as u32);
@@ -419,14 +420,13 @@ impl<'buf> Vm<'buf> {
                     let code_addr = u16::from_le_bytes([code[hdr.pc], code[hdr.pc + 1]]) as usize;
                     let n_args = code[hdr.pc + 2] as usize;
 
-                    let mut tmp = [Value::integer(0); 16];
                     for i in (0..n_args).rev() {
-                        tmp[i] = self.arena.stack_pop();
+                        self.staging[i] = self.arena.stack_pop();
                     }
 
                     self.arena.set_stack_bot_pos(hdr.frame_base);
                     for i in 0..n_args {
-                        self.arena.stack_push(tmp[i])?;
+                        self.arena.stack_push(self.staging[i])?;
                     }
                     hdr.pc = code_addr;
                 }

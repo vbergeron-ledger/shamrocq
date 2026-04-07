@@ -59,104 +59,66 @@
 ///   BYTES_EQ
 ///   BYTES_CONCAT
 
-// Stack / locals
-pub const LOAD: u8 = 0x01;
-pub const LOAD2: u8 = 0x02;
-pub const LOAD3: u8 = 0x03;
-pub const GLOBAL: u8 = 0x05;
-pub const DROP: u8 = 0x06;
-pub const SLIDE: u8 = 0x07;
+macro_rules! opcodes {
+    ($($name:ident = $val:expr),* $(,)?) => {
+        $(pub const $name: u8 = $val;)*
 
-// Data
-pub const PACK: u8 = 0x08;
-pub const UNPACK: u8 = 0x09;
-pub const BIND: u8 = 0x0A;
-pub const FOREIGN: u8 = 0x0B;
-pub const CLOSURE: u8 = 0x0C;
-pub const FIXPOINT: u8 = 0x0D;
+        pub fn name(opcode: u8) -> &'static str {
+            match opcode {
+                $($val => stringify!($name),)*
+                _ => "?",
+            }
+        }
+    };
+}
 
-// Control flow (calls)
-pub const CALL_DYNAMIC: u8 = 0x0E;
-pub const TAIL_CALL_DYNAMIC: u8 = 0x0F;
-pub const CALL: u8 = 0x10;
-pub const TAIL_CALL: u8 = 0x11;
-pub const RET: u8 = 0x12;
-
-// Control flow (branching)
-pub const MATCH: u8 = 0x13;
-pub const JMP: u8 = 0x14;
-pub const ERROR: u8 = 0x15;
-
-// Integer
-pub const INT: u8 = 0x16;
-pub const ADD: u8 = 0x17;
-pub const SUB: u8 = 0x18;
-pub const MUL: u8 = 0x19;
-pub const DIV: u8 = 0x1A;
-pub const NEG: u8 = 0x1B;
-pub const EQ: u8 = 0x1C;
-pub const LT: u8 = 0x1D;
-
-// Bytes
-pub const BYTES: u8 = 0x1E;
-pub const BYTES_LEN: u8 = 0x1F;
-pub const BYTES_GET: u8 = 0x20;
-pub const BYTES_EQ: u8 = 0x21;
-pub const BYTES_CONCAT: u8 = 0x22;
-
-// Specialized
-pub const PACK0: u8 = 0x23;
-pub const INT0: u8 = 0x24;
-pub const INT1: u8 = 0x25;
-pub const SLIDE1: u8 = 0x26;
-pub const MATCH2: u8 = 0x27;
-pub const FUNCTION: u8 = 0x28;
-pub const DUP: u8 = 0x29;
-pub const OVER: u8 = 0x2A;
-
-pub fn name(opcode: u8) -> &'static str {
-    match opcode {
-        LOAD => "LOAD",
-        LOAD2 => "LOAD2",
-        LOAD3 => "LOAD3",
-        GLOBAL => "GLOBAL",
-        DROP => "DROP",
-        SLIDE => "SLIDE",
-        PACK => "PACK",
-        UNPACK => "UNPACK",
-        BIND => "BIND",
-        FOREIGN => "FOREIGN",
-        CLOSURE => "CLOSURE",
-        FIXPOINT => "FIXPOINT",
-        CALL_DYNAMIC => "CALL_DYNAMIC",
-        TAIL_CALL_DYNAMIC => "TAIL_CALL_DYNAMIC",
-        CALL => "CALL",
-        TAIL_CALL => "TAIL_CALL",
-        RET => "RET",
-        MATCH => "MATCH",
-        JMP => "JMP",
-        ERROR => "ERROR",
-        INT => "INT",
-        ADD => "ADD",
-        SUB => "SUB",
-        MUL => "MUL",
-        DIV => "DIV",
-        NEG => "NEG",
-        EQ => "EQ",
-        LT => "LT",
-        BYTES => "BYTES",
-        BYTES_LEN => "BYTES_LEN",
-        BYTES_GET => "BYTES_GET",
-        BYTES_EQ => "BYTES_EQ",
-        BYTES_CONCAT => "BYTES_CONCAT",
-        PACK0 => "PACK0",
-        INT0 => "INT0",
-        INT1 => "INT1",
-        SLIDE1 => "SLIDE1",
-        MATCH2 => "MATCH2",
-        FUNCTION => "FUNCTION",
-        DUP => "DUP",
-        OVER => "OVER",
-        _ => "?",
-    }
+opcodes! {
+    // Stack / locals
+    LOAD              = 0x01,
+    LOAD2             = 0x02,
+    LOAD3             = 0x03,
+    GLOBAL            = 0x05,
+    DROP              = 0x06,
+    SLIDE             = 0x07,
+    // Data
+    PACK              = 0x08,
+    UNPACK            = 0x09,
+    BIND              = 0x0A,
+    FOREIGN           = 0x0B,
+    CLOSURE           = 0x0C,
+    FIXPOINT          = 0x0D,
+    // Control flow (calls)
+    CALL_DYNAMIC      = 0x0E,
+    TAIL_CALL_DYNAMIC = 0x0F,
+    CALL              = 0x10,
+    TAIL_CALL         = 0x11,
+    RET               = 0x12,
+    // Control flow (branching)
+    MATCH             = 0x13,
+    JMP               = 0x14,
+    ERROR             = 0x15,
+    // Integer
+    INT               = 0x16,
+    ADD               = 0x17,
+    SUB               = 0x18,
+    MUL               = 0x19,
+    DIV               = 0x1A,
+    NEG               = 0x1B,
+    EQ                = 0x1C,
+    LT                = 0x1D,
+    // Bytes
+    BYTES             = 0x1E,
+    BYTES_LEN         = 0x1F,
+    BYTES_GET         = 0x20,
+    BYTES_EQ          = 0x21,
+    BYTES_CONCAT      = 0x22,
+    // Specialized
+    PACK0             = 0x23,
+    INT0              = 0x24,
+    INT1              = 0x25,
+    SLIDE1            = 0x26,
+    MATCH2            = 0x27,
+    FUNCTION          = 0x28,
+    DUP               = 0x29,
+    OVER              = 0x2A,
 }
