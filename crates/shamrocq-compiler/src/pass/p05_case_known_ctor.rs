@@ -12,22 +12,16 @@
 //! This often fires after constant folding or inlining produces known ctors.
 
 use crate::resolve::{RDefine, RExpr, RMatchCase};
-use super::ResolvedPass;
-use super::p08_anf::{shift, shift_down};
+use super::SingleResolvedPass;
+use super::debruijn::{shift, shift_down};
 
 pub struct CaseOfKnownCtor;
 
-impl ResolvedPass for CaseOfKnownCtor {
+impl SingleResolvedPass for CaseOfKnownCtor {
     fn name(&self) -> &'static str { "case_of_known_ctor" }
 
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine> {
-        defs.into_iter()
-            .map(|d| RDefine {
-                name: d.name,
-                global_idx: d.global_idx,
-                body: optimize(d.body),
-            })
-            .collect()
+    fn run(&self, d: RDefine) -> RDefine {
+        RDefine { name: d.name, global_idx: d.global_idx, body: optimize(d.body) }
     }
 }
 
@@ -173,8 +167,8 @@ mod tests {
                 RMatchCase { tag: 1, arity: 0, body: RExpr::Int(2) },
             ],
         ));
-        let result = CaseOfKnownCtor.run(vec![input]);
-        assert_eq!(result[0].body, RExpr::Int(1));
+        let result = CaseOfKnownCtor.run(input);
+        assert_eq!(result.body, RExpr::Int(1));
     }
 
     #[test]
@@ -186,8 +180,8 @@ mod tests {
                 RMatchCase { tag: 0, arity: 1, body: RExpr::Local(0) },
             ],
         ));
-        let result = CaseOfKnownCtor.run(vec![input]);
-        assert_eq!(result[0].body, RExpr::Int(42));
+        let result = CaseOfKnownCtor.run(input);
+        assert_eq!(result.body, RExpr::Int(42));
     }
 
     #[test]
@@ -205,8 +199,8 @@ mod tests {
                 },
             ],
         ));
-        let result = CaseOfKnownCtor.run(vec![input]);
-        assert_eq!(result[0].body, RExpr::PrimOp(
+        let result = CaseOfKnownCtor.run(input);
+        assert_eq!(result.body, RExpr::PrimOp(
             PrimOp::Add,
             vec![RExpr::Int(10), RExpr::Int(20)],
         ));
@@ -222,7 +216,7 @@ mod tests {
             ],
         ));
         let expected = input.clone();
-        let result = CaseOfKnownCtor.run(vec![input]);
-        assert_eq!(result[0].body, expected.body);
+        let result = CaseOfKnownCtor.run(input);
+        assert_eq!(result.body, expected.body);
     }
 }

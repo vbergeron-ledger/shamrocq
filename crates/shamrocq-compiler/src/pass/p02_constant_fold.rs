@@ -12,20 +12,15 @@
 //!     (match (True) ((True) a) ((False) b))  =>  a
 
 use crate::desugar::{Define, Expr, MatchCase, PrimOp};
-use super::ExprPass;
+use super::SingleExprPass;
 
 pub struct ConstantFold;
 
-impl ExprPass for ConstantFold {
+impl SingleExprPass for ConstantFold {
     fn name(&self) -> &'static str { "constant_fold" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
-        defs.into_iter()
-            .map(|d| Define {
-                name: d.name,
-                body: fold(d.body),
-            })
-            .collect()
+    fn run(&self, d: Define) -> Define {
+        Define { name: d.name, body: fold(d.body) }
     }
 }
 
@@ -125,22 +120,22 @@ mod tests {
     #[test]
     fn fold_add() {
         let input = def("f", Expr::PrimOp(PrimOp::Add, vec![Expr::Int(1), Expr::Int(2)]));
-        let result = ConstantFold.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Int(3));
+        let result = ConstantFold.run(input);
+        assert_eq!(result.body, Expr::Int(3));
     }
 
     #[test]
     fn fold_eq_true() {
         let input = def("f", Expr::PrimOp(PrimOp::Eq, vec![Expr::Int(5), Expr::Int(5)]));
-        let result = ConstantFold.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Ctor("True".into(), vec![]));
+        let result = ConstantFold.run(input);
+        assert_eq!(result.body, Expr::Ctor("True".into(), vec![]));
     }
 
     #[test]
     fn fold_eq_false() {
         let input = def("f", Expr::PrimOp(PrimOp::Eq, vec![Expr::Int(1), Expr::Int(2)]));
-        let result = ConstantFold.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Ctor("False".into(), vec![]));
+        let result = ConstantFold.run(input);
+        assert_eq!(result.body, Expr::Ctor("False".into(), vec![]));
     }
 
     #[test]
@@ -151,8 +146,8 @@ mod tests {
             Box::new(Expr::Int(1)),
             Box::new(Expr::Int(2)),
         ));
-        let result = ConstantFold.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Int(1));
+        let result = ConstantFold.run(input);
+        assert_eq!(result.body, Expr::Int(1));
     }
 
     #[test]
@@ -163,8 +158,8 @@ mod tests {
             Box::new(Expr::Int(1)),
             Box::new(Expr::Int(2)),
         ));
-        let result = ConstantFold.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Int(2));
+        let result = ConstantFold.run(input);
+        assert_eq!(result.body, Expr::Int(2));
     }
 
     #[test]
@@ -177,8 +172,8 @@ mod tests {
                 MatchCase { tag: "False".into(), bindings: vec![], body: Expr::Int(2) },
             ],
         ));
-        let result = ConstantFold.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Int(1));
+        let result = ConstantFold.run(input);
+        assert_eq!(result.body, Expr::Int(1));
     }
 
     #[test]
@@ -186,8 +181,8 @@ mod tests {
         // (+ x 1) unchanged
         let input = def("f", Expr::PrimOp(PrimOp::Add, vec![Expr::Var("x".into()), Expr::Int(1)]));
         let expected = input.clone();
-        let result = ConstantFold.run(vec![input]);
-        assert_eq!(result[0].body, expected.body);
+        let result = ConstantFold.run(input);
+        assert_eq!(result.body, expected.body);
     }
 
     #[test]
@@ -197,7 +192,7 @@ mod tests {
             Expr::PrimOp(PrimOp::Add, vec![Expr::Int(1), Expr::Int(2)]),
             Expr::PrimOp(PrimOp::Sub, vec![Expr::Int(10), Expr::Int(4)]),
         ]));
-        let result = ConstantFold.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Int(9));
+        let result = ConstantFold.run(input);
+        assert_eq!(result.body, Expr::Int(9));
     }
 }

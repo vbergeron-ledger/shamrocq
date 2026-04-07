@@ -13,20 +13,15 @@
 //! that plagued the Let-based rewriting approach.
 
 use crate::desugar::{Define, Expr, MatchCase, PrimOp};
-use super::ExprPass;
+use super::SingleExprPass;
 
 pub struct CaseNat;
 
-impl ExprPass for CaseNat {
+impl SingleExprPass for CaseNat {
     fn name(&self) -> &'static str { "case_nat" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
-        defs.into_iter()
-            .map(|d| Define {
-                name: d.name,
-                body: reduce(d.body),
-            })
-            .collect()
+    fn run(&self, d: Define) -> Define {
+        Define { name: d.name, body: reduce(d.body) }
     }
 }
 
@@ -165,9 +160,9 @@ mod tests {
         let sc = Expr::Lambda("fuel~".into(), Box::new(Expr::Var("l".into())));
         let scrut = Expr::Var("fuel".into());
         let input = def("f", nat_elim_appn(zc.clone(), sc.clone(), scrut.clone()));
-        let result = CaseNat.run(vec![input]);
+        let result = CaseNat.run(input);
         assert_eq!(
-            result[0].body,
+            result.body,
             Expr::CaseNat(Box::new(zc), Box::new(sc), Box::new(scrut)),
         );
     }
@@ -197,8 +192,8 @@ mod tests {
             )),
             vec![Expr::Int(10), Expr::Int(20), Expr::Var("k".into())],
         ));
-        let result = CaseNat.run(vec![input]);
-        match &result[0].body {
+        let result = CaseNat.run(input);
+        match &result.body {
             Expr::CaseNat(zc, sc, scrut) => {
                 assert_eq!(**zc, Expr::Int(10));
                 assert_eq!(**sc, Expr::Int(20));
@@ -215,8 +210,8 @@ mod tests {
             vec![Expr::Int(1), Expr::Int(2)],
         ));
         let expected = input.clone();
-        let result = CaseNat.run(vec![input]);
-        assert_eq!(result[0].body, expected.body);
+        let result = CaseNat.run(input);
+        assert_eq!(result.body, expected.body);
     }
 
     #[test]
@@ -230,8 +225,8 @@ mod tests {
             vec!["n".into(), "l".into()],
             Box::new(inner),
         ));
-        let result = CaseNat.run(vec![input]);
-        match &result[0].body {
+        let result = CaseNat.run(input);
+        match &result.body {
             Expr::Lambdas(_, body) => {
                 assert!(matches!(body.as_ref(), Expr::CaseNat(..)));
             }

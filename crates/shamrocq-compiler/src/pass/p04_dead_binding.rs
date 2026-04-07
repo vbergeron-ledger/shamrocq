@@ -9,22 +9,16 @@
 //! variables in `body` are shifted down to account for the removed binding.
 
 use crate::resolve::{RDefine, RExpr, RMatchCase};
-use super::ResolvedPass;
-use super::p08_anf::{references_local, shift_down};
+use super::SingleResolvedPass;
+use super::debruijn::{references_local, shift_down};
 
 pub struct DeadBindingElim;
 
-impl ResolvedPass for DeadBindingElim {
+impl SingleResolvedPass for DeadBindingElim {
     fn name(&self) -> &'static str { "dead_binding_elim" }
 
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine> {
-        defs.into_iter()
-            .map(|d| RDefine {
-                name: d.name,
-                global_idx: d.global_idx,
-                body: elim(d.body),
-            })
-            .collect()
+    fn run(&self, d: RDefine) -> RDefine {
+        RDefine { name: d.name, global_idx: d.global_idx, body: elim(d.body) }
     }
 }
 
@@ -85,8 +79,8 @@ mod tests {
             Box::new(RExpr::Int(42)),
             Box::new(RExpr::Global(0)),
         ));
-        let result = DeadBindingElim.run(vec![input]);
-        assert_eq!(result[0].body, RExpr::Global(0));
+        let result = DeadBindingElim.run(input);
+        assert_eq!(result.body, RExpr::Global(0));
     }
 
     #[test]
@@ -96,8 +90,8 @@ mod tests {
             Box::new(RExpr::Int(42)),
             Box::new(RExpr::Local(0)),
         ));
-        let result = DeadBindingElim.run(vec![input]);
-        assert_eq!(result[0].body, RExpr::Let(
+        let result = DeadBindingElim.run(input);
+        assert_eq!(result.body, RExpr::Let(
             Box::new(RExpr::Int(42)),
             Box::new(RExpr::Local(0)),
         ));
@@ -114,7 +108,7 @@ mod tests {
                 Box::new(RExpr::Local(1)),
             ),
         )));
-        let result = DeadBindingElim.run(vec![input]);
-        assert_eq!(result[0].body, RExpr::Lambda(Box::new(RExpr::Local(0))));
+        let result = DeadBindingElim.run(input);
+        assert_eq!(result.body, RExpr::Lambda(Box::new(RExpr::Local(0))));
     }
 }

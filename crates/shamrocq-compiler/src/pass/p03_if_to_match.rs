@@ -10,20 +10,15 @@
 //! and the rest of the pipeline only deals with `Match`.
 
 use crate::desugar::{Define, Expr, MatchCase};
-use super::ExprPass;
+use super::SingleExprPass;
 
 pub struct IfToMatch;
 
-impl ExprPass for IfToMatch {
+impl SingleExprPass for IfToMatch {
     fn name(&self) -> &'static str { "if_to_match" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
-        defs.into_iter()
-            .map(|d| Define {
-                name: d.name,
-                body: lower(d.body),
-            })
-            .collect()
+    fn run(&self, d: Define) -> Define {
+        Define { name: d.name, body: lower(d.body) }
     }
 }
 
@@ -91,8 +86,8 @@ mod tests {
             Box::new(Expr::Int(1)),
             Box::new(Expr::Int(2)),
         ));
-        let result = IfToMatch.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Match(
+        let result = IfToMatch.run(input);
+        assert_eq!(result.body, Expr::Match(
             Box::new(Expr::Var("x".into())),
             vec![
                 MatchCase { tag: "True".into(), bindings: vec![], body: Expr::Int(1) },
@@ -113,9 +108,9 @@ mod tests {
             Box::new(Expr::Var("d".into())),
             Box::new(Expr::Var("e".into())),
         ));
-        let result = IfToMatch.run(vec![input]);
+        let result = IfToMatch.run(input);
         // Both levels should be Match
-        if let Expr::Match(scrut, _) = &result[0].body {
+        if let Expr::Match(scrut, _) = &result.body {
             assert!(matches!(**scrut, Expr::Match(_, _)));
         } else {
             panic!("expected Match");
@@ -125,7 +120,7 @@ mod tests {
     #[test]
     fn non_if_unchanged() {
         let input = def("f", Expr::Int(42));
-        let result = IfToMatch.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Int(42));
+        let result = IfToMatch.run(input);
+        assert_eq!(result.body, Expr::Int(42));
     }
 }

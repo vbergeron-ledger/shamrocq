@@ -10,22 +10,16 @@
 //! at runtime.
 
 use crate::resolve::{RDefine, RExpr, RMatchCase};
-use super::ResolvedPass;
-use super::p08_anf::{references_local, shift_down};
+use super::SingleResolvedPass;
+use super::debruijn::{references_local, shift_down};
 
 pub struct EtaReduce;
 
-impl ResolvedPass for EtaReduce {
+impl SingleResolvedPass for EtaReduce {
     fn name(&self) -> &'static str { "eta_reduce" }
 
-    fn run(&self, defs: Vec<RDefine>) -> Vec<RDefine> {
-        defs.into_iter()
-            .map(|d| RDefine {
-                name: d.name,
-                global_idx: d.global_idx,
-                body: reduce(d.body),
-            })
-            .collect()
+    fn run(&self, d: RDefine) -> RDefine {
+        RDefine { name: d.name, global_idx: d.global_idx, body: reduce(d.body) }
     }
 }
 
@@ -89,8 +83,8 @@ mod tests {
         let input = rdef("f", RExpr::Lambda(Box::new(
             RExpr::App(Box::new(RExpr::Global(0)), Box::new(RExpr::Local(0))),
         )));
-        let result = EtaReduce.run(vec![input]);
-        assert_eq!(result[0].body, RExpr::Global(0));
+        let result = EtaReduce.run(input);
+        assert_eq!(result.body, RExpr::Global(0));
     }
 
     #[test]
@@ -100,8 +94,8 @@ mod tests {
             RExpr::App(Box::new(RExpr::Local(0)), Box::new(RExpr::Local(0))),
         )));
         let expected = input.clone();
-        let result = EtaReduce.run(vec![input]);
-        assert_eq!(result[0].body, expected.body);
+        let result = EtaReduce.run(input);
+        assert_eq!(result.body, expected.body);
     }
 
     #[test]
@@ -116,8 +110,8 @@ mod tests {
                 Box::new(RExpr::Local(0)),
             ),
         )));
-        let result = EtaReduce.run(vec![input]);
-        assert_eq!(result[0].body, RExpr::Global(0));
+        let result = EtaReduce.run(input);
+        assert_eq!(result.body, RExpr::Global(0));
     }
 
     #[test]
@@ -127,7 +121,7 @@ mod tests {
             RExpr::App(Box::new(RExpr::Global(0)), Box::new(RExpr::Global(1))),
         )));
         let expected = input.clone();
-        let result = EtaReduce.run(vec![input]);
-        assert_eq!(result[0].body, expected.body);
+        let result = EtaReduce.run(input);
+        assert_eq!(result.body, expected.body);
     }
 }

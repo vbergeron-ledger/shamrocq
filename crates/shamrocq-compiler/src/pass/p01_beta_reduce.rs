@@ -9,20 +9,15 @@
 //! function position (not a variable reference), so it never duplicates code.
 
 use crate::desugar::{Define, Expr, MatchCase};
-use super::ExprPass;
+use super::SingleExprPass;
 
 pub struct BetaReduce;
 
-impl ExprPass for BetaReduce {
+impl SingleExprPass for BetaReduce {
     fn name(&self) -> &'static str { "beta_reduce" }
 
-    fn run(&self, defs: Vec<Define>) -> Vec<Define> {
-        defs.into_iter()
-            .map(|d| Define {
-                name: d.name,
-                body: reduce(d.body),
-            })
-            .collect()
+    fn run(&self, d: Define) -> Define {
+        Define { name: d.name, body: reduce(d.body) }
     }
 }
 
@@ -90,8 +85,8 @@ mod tests {
             Box::new(Expr::Lambda("x".into(), Box::new(Expr::Var("x".into())))),
             Box::new(Expr::Int(42)),
         ));
-        let result = BetaReduce.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Let(
+        let result = BetaReduce.run(input);
+        assert_eq!(result.body, Expr::Let(
             "x".into(),
             Box::new(Expr::Int(42)),
             Box::new(Expr::Var("x".into())),
@@ -106,8 +101,8 @@ mod tests {
             Box::new(Expr::Int(42)),
         ));
         let expected = input.clone();
-        let result = BetaReduce.run(vec![input]);
-        assert_eq!(result[0].body, expected.body);
+        let result = BetaReduce.run(input);
+        assert_eq!(result.body, expected.body);
     }
 
     #[test]
@@ -121,8 +116,8 @@ mod tests {
             )))),
             Box::new(Expr::Int(1)),
         ));
-        let result = BetaReduce.run(vec![input]);
-        assert_eq!(result[0].body, Expr::Let(
+        let result = BetaReduce.run(input);
+        assert_eq!(result.body, Expr::Let(
             "x".into(),
             Box::new(Expr::Int(1)),
             Box::new(Expr::Let(

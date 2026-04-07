@@ -24,7 +24,7 @@
 
 use crate::resolve::{RDefine, RExpr, RMatchCase};
 use crate::pass::p07_arity_analysis::lambda_arity;
-use crate::pass::p08_anf::shift;
+use crate::pass::debruijn::shift;
 use super::ResolvedPass;
 
 pub struct AritySpecialize;
