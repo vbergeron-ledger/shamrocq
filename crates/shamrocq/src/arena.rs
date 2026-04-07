@@ -327,6 +327,21 @@ impl<'a> Arena<'a> {
     }
 
     #[inline(always)]
+    pub fn stack_push_unchecked(&mut self, val: Value) {
+        self.stack_bot -= 1;
+        self.buf[self.stack_bot] = val.raw();
+        stat!(self, peak_stack_bytes = max (self.buf.len() - self.stack_bot) * 4);
+    }
+
+    #[inline(always)]
+    pub fn stack_reserve(&self, n: usize) -> Result<(), ArenaError> {
+        if self.stack_bot.wrapping_sub(n) <= self.heap_top {
+            return Err(ArenaError::OutOfMemory);
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
     pub fn stack_pop(&mut self) -> Value {
         let val = Value::from_raw(self.buf[self.stack_bot]);
         self.stack_bot += 1;

@@ -202,23 +202,25 @@ impl<'buf> Vm<'buf> {
         }
     }
 
+    fn ensure_gc_headroom(&mut self) -> Result<(), VmError> {
+        const GC_THRESHOLD: usize = 64;
+        if self.arena.free() < GC_THRESHOLD {
+            self.run_gc();
+            if self.arena.free() < GC_THRESHOLD {
+                return Err(VmError::Oom);
+            }
+        }
+        Ok(())
+    }
+
     fn eval(&mut self, pc: usize, frame_base: usize) -> Result<Value, VmError> {
         let code = self.code;
         let mut hdr = FrameHeader { pc, frame_base };
         let mut call_depth: usize = 0;
 
-        const GC_THRESHOLD: usize = 64;
-
         loop {
             if hdr.pc >= code.len() {
                 return Err(VmError::InvalidBytecode);
-            }
-
-            if self.arena.free() < GC_THRESHOLD {
-                self.run_gc();
-                if self.arena.free() < GC_THRESHOLD {
-                    return Err(VmError::Oom);
-                }
             }
 
             let opcode = code[hdr.pc];
@@ -241,6 +243,7 @@ impl<'buf> Vm<'buf> {
                 }
 
                 op::PACK => {
+                    self.ensure_gc_headroom()?;
                     let tag = code[hdr.pc];
                     let arity = code[hdr.pc + 1] as usize;
                     let val = self.arena.alloc_ctor_from_stack(tag, arity)?;
@@ -270,8 +273,9 @@ impl<'buf> Vm<'buf> {
                     let idx_b = code[hdr.pc + 1] as usize;
                     let a = self.arena.stack_frame_load(&hdr, idx_a);
                     let b = self.arena.stack_frame_load(&hdr, idx_b);
-                    self.arena.stack_push(a)?;
-                    self.arena.stack_push(b)?;
+                    self.arena.stack_reserve(2)?;
+                    self.arena.stack_push_unchecked(a);
+                    self.arena.stack_push_unchecked(b);
                     hdr.pc += 2;
                 }
 
@@ -282,9 +286,10 @@ impl<'buf> Vm<'buf> {
                     let a = self.arena.stack_frame_load(&hdr, idx_a);
                     let b = self.arena.stack_frame_load(&hdr, idx_b);
                     let c = self.arena.stack_frame_load(&hdr, idx_c);
-                    self.arena.stack_push(a)?;
-                    self.arena.stack_push(b)?;
-                    self.arena.stack_push(c)?;
+                    self.arena.stack_reserve(3)?;
+                    self.arena.stack_push_unchecked(a);
+                    self.arena.stack_push_unchecked(b);
+                    self.arena.stack_push_unchecked(c);
                     hdr.pc += 3;
                 }
 
@@ -302,6 +307,7 @@ impl<'buf> Vm<'buf> {
                 }
 
                 op::CLOSURE => {
+                    self.ensure_gc_headroom()?;
                     let code_addr = u16::from_le_bytes([code[hdr.pc], code[hdr.pc + 1]]);
                     let arity = code[hdr.pc + 2];
                     let n_cap = code[hdr.pc + 3] as usize;
@@ -311,6 +317,7 @@ impl<'buf> Vm<'buf> {
                 }
 
                 op::CALL_DYNAMIC => {
+                    self.ensure_gc_headroom()?;
                     let arg = self.arena.stack_pop();
                     let func = self.arena.stack_pop();
 
@@ -356,6 +363,7 @@ impl<'buf> Vm<'buf> {
                 }
 
                 op::TAIL_CALL_DYNAMIC => {
+                    self.ensure_gc_headroom()?;
                     let arg = self.arena.stack_pop();
                     let func = self.arena.stack_pop();
 
@@ -622,6 +630,7 @@ impl<'buf> Vm<'buf> {
                 }
 
                 op::BYTES => {
+                    self.ensure_gc_headroom()?;
                     let len = code[hdr.pc] as usize;
                     let data_start = hdr.pc + 1;
                     let val = self.arena.alloc_bytes(&code[data_start..data_start + len])?;
@@ -654,6 +663,7 @@ impl<'buf> Vm<'buf> {
                 }
 
                 op::BYTES_CONCAT => {
+                    self.ensure_gc_headroom()?;
                     let b = self.arena.stack_pop();
                     let a = self.arena.stack_pop();
                     if self.arena.bytes_len(a) + self.arena.bytes_len(b) > 255 {

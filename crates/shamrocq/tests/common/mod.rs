@@ -43,12 +43,6 @@ pub fn compile_scheme(files: &[&str]) -> Compiled {
     Compiled { blob: prog.serialize(), funcs, tags: tag_map }
 }
 
-pub fn setup(files: &[&str]) -> (Compiled, Vec<u8>, Vm<'static>) {
-    let c = compile_scheme(files);
-    let buf = vec![0u8; 65536];
-    (c, buf, unsafe { std::mem::zeroed() })
-}
-
 pub fn peano(vm: &mut Vm, tag_o: u8, tag_s: u8, n: u32) -> Value {
     let mut v = Value::nullary_ctor(tag_o);
     for _ in 0..n {
